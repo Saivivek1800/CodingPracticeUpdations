@@ -14,7 +14,18 @@ bash scripts/bootstrap.sh
 source venv/bin/activate
 ```
 
-**`.secrets.env` is not on GitHub** (gitignored). Copy the template: `cp .secrets.env.example .secrets.env` then edit with real values. See [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md). **Phase 2** (admin updaters) needs these credentials on **each** machine — `.secrets.enc` / session files are also gitignored; teammates must add secrets locally. Details: [LOCAL_SETUP.md — Teammates and new computers](docs/LOCAL_SETUP.md#teammates-and-new-computers-phase-2-credentials).
+**Security:** This repo is set up to **commit** `.secrets.env` and `.secrets.enc` so teammates can run Phase 2 after `git clone`. **Use a private GitHub repo only.** If it is ever public or exposed, **rotate all Django admin passwords immediately**.
+
+After clone, ensure `.secrets.env` exists in the repo (maintainer commits it) or copy from `.secrets.env.example` and fill values. Optional: commit `.secrets.enc` instead of plain `.secrets.env` (still sensitive). Session JSON files stay gitignored.
+
+**Teammate quick start:**
+
+```bash
+git pull
+NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
+```
+
+If Phase 2 still fails, see **Diagnosis** in the error output or [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
 **Web UI (local):**
 
@@ -259,6 +270,6 @@ Expected JSON includes `"ok": true`.
 
 ## Security Notes
 
-- Do not commit `.secrets.env` or session JSON files.
+- **`.secrets.env` / `.secrets.enc` may be committed** for team convenience (private repo only). Session files remain local/gitignored.
 - Restrict dashboard access behind VPN/IP allow-list or authentication at proxy level.
 - If needed, use API token protection (`AUTOMATION_API_TOKEN`) as documented in `deployment/env.example`.

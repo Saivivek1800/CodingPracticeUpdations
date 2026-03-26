@@ -82,17 +82,16 @@ playwright install chromium
 
 ## 5. Secrets and configuration
 
-**Why GitHub has no `.secrets.env`:** those files are listed in **`.gitignore`** so passwords are never pushed. The repo **does** include **`.secrets.env.example`** (placeholders only) so everyone knows which variables to set.
+**Team setup:** `.secrets.env` and `.secrets.enc` are **not** in `.gitignore` — maintainers can commit them so `git clone` is enough to run Phase 2. **Repository must stay private.** Rotate admin passwords if the repo is ever leaked or made public.
 
-Create your real file from the example:
+Create or update credentials:
 
 ```bash
 cp .secrets.env.example .secrets.env
 nano .secrets.env
-chmod 600 .secrets.env
 ```
 
-Do **not** commit `.secrets.env` or `.secrets.enc`.
+Then commit and push (maintainer only): `git add .secrets.env && git commit -m "Add team secrets" && git push` — or share `.secrets.enc` and document `SECRETS_DECRYPTION_KEY` via a separate channel.
 
 For optional server/runtime variables (not Django passwords), see `deployment/env.example`.
 
@@ -129,15 +128,15 @@ Adding docs to the repo does **not** by itself log anyone into Django admin. Eac
 | **Phase 1** ( `generate_input_*.py` ) | No — only reads/writes JSON from `input.json` etc. |
 | **Phase 2** ( `run_*_updater.sh` , full pipeline part 2 ) | Yes — Playwright opens Django admin. |
 
-These files are **intentionally not in Git** (see root `.gitignore`): `.secrets.env`, `.secrets.enc`, `beta_admin_session.json`, `prod_admin_session.json`. They contain passwords or session cookies.
+**In Git:** `.secrets.env` and/or `.secrets.enc` may be committed (private repo). **Not in Git (still gitignored):** `beta_admin_session.json`, `prod_admin_session.json`, `admin_session.json` — local session cookies only.
 
 **What each teammate should do after `git clone`:**
 
-1. Create **`.secrets.env`** in the project root with real `BETA_*` / `PROD_*` values (get them from your team lead or company password manager — **not** via a public repo), **or**
-2. Copy **`.secrets.enc`** through a **private** channel into the project root (same folder as `requirements.txt`), **or**
-3. Run an updater once with username/password so **`beta_admin_session.json`** is created; scripts can reuse it until the session expires (then `.secrets.env` is used to re-login).
+1. **`git pull`** — if the maintainer committed `.secrets.env`, Phase 2 works with no extra setup, **or**
+2. Add **`.secrets.env`** locally (copy from `.secrets.env.example`) if your team does not commit secrets, **or**
+3. Use **`.secrets.enc`** + **`SECRETS_DECRYPTION_KEY`** when using non-interactive runs.
 
-Until one of the above exists on that computer, **Phase 2 will fail with missing or invalid credentials** even though Phase 1 succeeds.
+Until credentials exist (from repo or locally), **Phase 2 will fail** even though Phase 1 succeeds.
 
 ### Using `.secrets.enc` with `NON_INTERACTIVE=1` (full pipeline / CI)
 
@@ -166,7 +165,7 @@ One line:
 SECRETS_DECRYPTION_KEY='your-openssl-passphrase-here' NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
 ```
 
-**Requirements:** `.secrets.enc` must exist in the project root on that machine (copy it privately; it is not in Git). If the passphrase is wrong, you may see a warning and still no credentials — then use `.secrets.env` instead or fix the key.
+**Requirements:** `.secrets.enc` must exist in the project root (clone or copy). If the passphrase is wrong, you may see a warning and still no credentials — fix the key or use `.secrets.env`.
 
 **Interactive alternative:** run a single updater **without** `NON_INTERACTIVE=1` so the script can prompt for the decryption key (not ideal for `run_full_pipeline.sh`, which is usually non-interactive).
 
@@ -255,7 +254,7 @@ Other updaters follow the same pattern: `bash backend/scripts/run_<name>_updater
 | Python | `python3 --version` → 3.10+ |
 | Deps | `pip install -r requirements.txt` and `pip install playwright` succeed |
 | Browser | `playwright install chromium` succeeds |
-| Secrets | `.secrets.env` exists and is not committed to git |
+| Secrets | `.secrets.env` in project root (from `git pull` or local file) |
 | API | `curl -s http://127.0.0.1:5000/health` returns JSON with `"ok": true` |
 | Admin | Run one small updater; confirm changes in Django admin |
 
@@ -264,9 +263,10 @@ Other updaters follow the same pattern: `bash backend/scripts/run_<name>_updater
 ## 10. Git: what to commit vs ignore
 
 - **Commit:** application code, `requirements.txt`, `deployment/`, `docs/`, templates, scripts.
-- **Never commit:** `.secrets.env`, `.secrets.enc`, `beta_admin_session.json`, `prod_admin_session.json`, `venv/`, large `sessions/` logs, `__pycache__/`.
+- **May commit (private repo only):** `.secrets.env`, `.secrets.enc`
+- **Do not rely on Git for:** `beta_admin_session.json`, `prod_admin_session.json` (gitignored), `venv/`, `sessions/`, `__pycache__/`.
 
-The repository includes a **`.gitignore`** at the project root for common cases. Review it before your first push.
+Review root **`.gitignore`** before your first push.
 
 ---
 

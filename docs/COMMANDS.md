@@ -35,14 +35,7 @@ source venv/bin/activate
 playwright install-deps chromium
 ```
 
-**Secrets (create manually; never commit):**
-
-```bash
-nano .secrets.env
-chmod 600 .secrets.env
-```
-
-See [LOCAL_SETUP.md](LOCAL_SETUP.md) for `.secrets.env` variable names.
+**Secrets:** `.secrets.env` may live in the repo (private team setup). Otherwise create from `.secrets.env.example`. See [LOCAL_SETUP.md](LOCAL_SETUP.md).
 
 ---
 
@@ -257,7 +250,7 @@ Pipeline and UI jobs write under `sessions/` (ignored by git).
 bash scripts/bootstrap.sh
 ```
 
-Do not commit: `.secrets.env`, `venv/`, `sessions/`, session JSON files. See root `.gitignore`.
+Session JSON and `venv/` stay local — see root `.gitignore`. `.secrets.env` may be committed if your team chose that (private repo only).
 
 ---
 

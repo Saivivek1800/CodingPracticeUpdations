@@ -3,12 +3,13 @@ venv/
 .venv/
 env/
 
-# Secrets and sessions (never commit)
-.secrets.env
-.secrets.enc
+# Session cookies (local only — expire; redundant if .secrets.env is in repo)
 beta_admin_session.json
 prod_admin_session.json
 admin_session.json
+
+# NOTE: .secrets.env and .secrets.enc are tracked so teammates can clone and run Phase 2.
+# Use a PRIVATE repo only. If the repo is ever public or leaked, rotate all admin passwords immediately.
 
 # Python
 __pycache__/
