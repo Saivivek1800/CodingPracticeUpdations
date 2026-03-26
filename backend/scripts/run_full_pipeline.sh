@@ -9,6 +9,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Ensure child updater scripts see these (needed for lib_django_session.sh + .secrets.enc)
+export NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
+export DJANGO_TARGET_ENV="${DJANGO_TARGET_ENV:-beta}"
+
 if [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
 fi

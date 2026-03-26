@@ -82,11 +82,17 @@ playwright install chromium
 
 ## 5. Secrets and configuration
 
-Do **not** commit real passwords. Create `.secrets.env` in the **project root** (same level as `requirements.txt`):
+**Why GitHub has no `.secrets.env`:** those files are listed in **`.gitignore`** so passwords are never pushed. The repo **does** include **`.secrets.env.example`** (placeholders only) so everyone knows which variables to set.
+
+Create your real file from the example:
 
 ```bash
+cp .secrets.env.example .secrets.env
 nano .secrets.env
+chmod 600 .secrets.env
 ```
+
+Do **not** commit `.secrets.env` or `.secrets.enc`.
 
 For optional server/runtime variables (not Django passwords), see `deployment/env.example`.
 
@@ -113,6 +119,67 @@ Optional: if evaluation metrics admin URL differs in your environment, add:
 ```env
 DJANGO_EVAL_METRICS_MODEL_PATH=nkb_question/codingquestiontestcaseevalutionmetrics/
 ```
+
+### Teammates and new computers (Phase 2 credentials)
+
+Adding docs to the repo does **not** by itself log anyone into Django admin. Each developer machine still needs **local** credentials (or a saved session).
+
+| Phase | Needs admin creds? |
+|-------|---------------------|
+| **Phase 1** ( `generate_input_*.py` ) | No — only reads/writes JSON from `input.json` etc. |
+| **Phase 2** ( `run_*_updater.sh` , full pipeline part 2 ) | Yes — Playwright opens Django admin. |
+
+These files are **intentionally not in Git** (see root `.gitignore`): `.secrets.env`, `.secrets.enc`, `beta_admin_session.json`, `prod_admin_session.json`. They contain passwords or session cookies.
+
+**What each teammate should do after `git clone`:**
+
+1. Create **`.secrets.env`** in the project root with real `BETA_*` / `PROD_*` values (get them from your team lead or company password manager — **not** via a public repo), **or**
+2. Copy **`.secrets.enc`** through a **private** channel into the project root (same folder as `requirements.txt`), **or**
+3. Run an updater once with username/password so **`beta_admin_session.json`** is created; scripts can reuse it until the session expires (then `.secrets.env` is used to re-login).
+
+Until one of the above exists on that computer, **Phase 2 will fail with missing or invalid credentials** even though Phase 1 succeeds.
+
+### Using `.secrets.enc` with `NON_INTERACTIVE=1` (full pipeline / CI)
+
+`backend/scripts/lib_django_session.sh` decrypts `.secrets.enc` only when it has a **decryption key**. In **non-interactive** mode it does **not** prompt — it reads the key from the environment variable **`SECRETS_DECRYPTION_KEY`**.
+
+If you run:
+
+```bash
+NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
+```
+
+**without** `SECRETS_DECRYPTION_KEY` and **without** `.secrets.env` or `beta_admin_session.json`, decryption is skipped and you get:
+
+`Missing DJANGO credentials and no session file beta_admin_session.json`
+
+**Fix — export the same passphrase you used when creating `.secrets.enc`:**
+
+```bash
+export SECRETS_DECRYPTION_KEY='your-openssl-passphrase-here'
+NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
+```
+
+One line:
+
+```bash
+SECRETS_DECRYPTION_KEY='your-openssl-passphrase-here' NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
+```
+
+**Requirements:** `.secrets.enc` must exist in the project root on that machine (copy it privately; it is not in Git). If the passphrase is wrong, you may see a warning and still no credentials — then use `.secrets.env` instead or fix the key.
+
+**Interactive alternative:** run a single updater **without** `NON_INTERACTIVE=1` so the script can prompt for the decryption key (not ideal for `run_full_pipeline.sh`, which is usually non-interactive).
+
+**Still failing?** Test decrypt only (same OpenSSL options as `setup_secrets.sh`):
+
+```bash
+cd /path/to/project
+SECRETS_DECRYPTION_KEY='same-key-as-setup_secrets.sh' bash scripts/verify_secrets_enc.sh
+```
+
+If this prints `OK`, the key and file match; then run the pipeline with the same `SECRETS_DECRYPTION_KEY`. If it prints `FAILED`, the passphrase is wrong, `.secrets.enc` is from a different encryption command, or the file was corrupted when copying.
+
+**OpenSSL note:** Decryption uses the same `-pass pass:...` style as `setup_secrets.sh`. If someone encrypted with a different OpenSSL command, re-run `bash setup_secrets.sh` from a plain `.secrets.env` and copy the new `.secrets.enc`.
 
 ---
 

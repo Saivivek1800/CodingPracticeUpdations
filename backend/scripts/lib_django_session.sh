@@ -65,17 +65,29 @@ if [ "$RUN_SECRETS_DECRYPT" = "true" ]; then
         echo ""
     fi
     if [ -n "$DECRYPTION_KEY" ]; then
-        WHILE_READ_VARS=$(openssl enc -aes-256-cbc -d -pbkdf2 -in .secrets.enc -k "$DECRYPTION_KEY" 2>/dev/null)
-        if [ $? -eq 0 ] && [ -n "$WHILE_READ_VARS" ]; then
-            export BETA_W_U=$(echo "$WHILE_READ_VARS" | grep "BETA_DJANGO_ADMIN_USERNAME" | cut -d '=' -f 2- | tr -d '"')
-            export BETA_W_P=$(echo "$WHILE_READ_VARS" | grep "BETA_DJANGO_ADMIN_PASSWORD" | cut -d '=' -f 2- | tr -d '"')
-            export BETA_W_L=$(echo "$WHILE_READ_VARS" | grep "BETA_DJANGO_ADMIN_URL" | cut -d '=' -f 2- | tr -d '"')
-            export PROD_W_U=$(echo "$WHILE_READ_VARS" | grep "PROD_DJANGO_ADMIN_USERNAME" | cut -d '=' -f 2- | tr -d '"')
-            export PROD_W_P=$(echo "$WHILE_READ_VARS" | grep "PROD_DJANGO_ADMIN_PASSWORD" | cut -d '=' -f 2- | tr -d '"')
-            export PROD_W_L=$(echo "$WHILE_READ_VARS" | grep "PROD_DJANGO_ADMIN_URL" | cut -d '=' -f 2- | tr -d '"')
+        # Must match setup_secrets.sh: openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:"$KEY"
+        _OPENSSL_ERR="${TMPDIR:-/tmp}/lib_django_openssl_$$.err"
+        WHILE_READ_VARS=$(openssl enc -aes-256-cbc -d -pbkdf2 -in .secrets.enc -pass pass:"$DECRYPTION_KEY" 2>"$_OPENSSL_ERR")
+        _OPENSSL_EC=$?
+        WHILE_READ_VARS=$(printf '%s' "$WHILE_READ_VARS" | tr -d '\r')
+        if [ "$_OPENSSL_EC" -eq 0 ] && [ -n "$WHILE_READ_VARS" ]; then
+            export BETA_W_U=$(echo "$WHILE_READ_VARS" | grep "BETA_DJANGO_ADMIN_USERNAME" | head -1 | cut -d '=' -f 2- | tr -d '"' | tr -d '\r')
+            export BETA_W_P=$(echo "$WHILE_READ_VARS" | grep "BETA_DJANGO_ADMIN_PASSWORD" | head -1 | cut -d '=' -f 2- | tr -d '"' | tr -d '\r')
+            export BETA_W_L=$(echo "$WHILE_READ_VARS" | grep "BETA_DJANGO_ADMIN_URL" | head -1 | cut -d '=' -f 2- | tr -d '"' | tr -d '\r')
+            export PROD_W_U=$(echo "$WHILE_READ_VARS" | grep "PROD_DJANGO_ADMIN_USERNAME" | head -1 | cut -d '=' -f 2- | tr -d '"' | tr -d '\r')
+            export PROD_W_P=$(echo "$WHILE_READ_VARS" | grep "PROD_DJANGO_ADMIN_PASSWORD" | head -1 | cut -d '=' -f 2- | tr -d '"' | tr -d '\r')
+            export PROD_W_L=$(echo "$WHILE_READ_VARS" | grep "PROD_DJANGO_ADMIN_URL" | head -1 | cut -d '=' -f 2- | tr -d '"' | tr -d '\r')
         else
-            echo "Warning: Decryption key did not work. Will try with .secrets.env if present."
+            echo "Warning: .secrets.enc decrypt failed (wrong SECRETS_DECRYPTION_KEY, corrupt file, or OpenSSL mismatch)." >&2
+            if [ -s "$_OPENSSL_ERR" ]; then
+                echo "  openssl: $(tr -d '\n' < "$_OPENSSL_ERR" | head -c 200)" >&2
+            fi
+            echo "  Will try with .secrets.env if present." >&2
         fi
+        rm -f "$_OPENSSL_ERR"
+    elif [ "$NON_INTERACTIVE" = "1" ] && [ -f ".secrets.enc" ]; then
+        echo "Warning: NON_INTERACTIVE=1 but SECRETS_DECRYPTION_KEY is empty — cannot decrypt .secrets.enc." >&2
+        echo "  Export it: SECRETS_DECRYPTION_KEY='your-validation-key' ..." >&2
     fi
 fi
 

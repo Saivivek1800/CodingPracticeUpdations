@@ -14,7 +14,7 @@ bash scripts/bootstrap.sh
 source venv/bin/activate
 ```
 
-Create **`.secrets.env`** in the project root (see [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)); never commit it.
+**`.secrets.env` is not on GitHub** (gitignored). Copy the template: `cp .secrets.env.example .secrets.env` then edit with real values. See [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md). **Phase 2** (admin updaters) needs these credentials on **each** machine — `.secrets.enc` / session files are also gitignored; teammates must add secrets locally. Details: [LOCAL_SETUP.md — Teammates and new computers](docs/LOCAL_SETUP.md#teammates-and-new-computers-phase-2-credentials).
 
 **Web UI (local):**
 

@@ -90,6 +90,15 @@ Most updater scripts use `lib_django_session.sh` and accept:
 |----------|---------|
 | `DJANGO_TARGET_ENV` | `beta` or `prod` |
 | `NON_INTERACTIVE` | `1` to skip prompts |
+| `SECRETS_DECRYPTION_KEY` | Passphrase for `.secrets.enc` when `NON_INTERACTIVE=1` (no prompt). Without it, decrypt is skipped. |
+
+If Phase 2 says *no credentials* but you use **only** `.secrets.enc`, run with:
+
+```bash
+SECRETS_DECRYPTION_KEY='your-passphrase' NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
+```
+
+See **Using `.secrets.enc` with `NON_INTERACTIVE=1`** in [LOCAL_SETUP.md](LOCAL_SETUP.md).
 
 For copy-paste below, set once in your shell (then run each step):
 
