@@ -69,10 +69,9 @@ venv\Scripts\activate.bat
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install playwright
 ```
 
-Install the Chromium browser used by automation:
+`requirements.txt` includes the `playwright` package. Install the Chromium browser used by automation:
 
 ```bash
 playwright install chromium
@@ -272,8 +271,10 @@ Review root **`.gitignore`** before your first push.
 
 ## Troubleshooting
 
+- **`ModuleNotFoundError: No module named 'playwright'`:** You are not using the project venv, or you skipped setup. Run `bash scripts/bootstrap.sh`, then `source venv/bin/activate`, then run the pipeline again.
+- **Pipeline fails after bootstrap:** Run `source venv/bin/activate` then `bash scripts/check_setup.sh` and fix any `[FAIL]` lines. Chromium often needs `sudo $(which playwright) install-deps chromium` on Ubuntu.
 - **Playwright / Chromium errors:** Re-run `playwright install chromium` and, on Linux, `playwright install-deps chromium`.
-- **Module not found:** Ensure `venv` is activated and you ran `pip install -r requirements.txt` plus `pip install playwright`.
+- **Other module not found:** Ensure `venv` is activated and `pip install -r requirements.txt` completed.
 - **Admin login or 404:** Check `BETA_DJANGO_ADMIN_URL` / `PROD_DJANGO_ADMIN_URL` match the browser exactly; set `DJANGO_EVAL_METRICS_MODEL_PATH` if metrics changelist 404s.
 - **Permission denied on scripts:** `chmod +x run_production.sh backend/scripts/*.sh` if needed.
 

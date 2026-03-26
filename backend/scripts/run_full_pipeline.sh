@@ -13,8 +13,27 @@ cd "$PROJECT_ROOT"
 export NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 export DJANGO_TARGET_ENV="${DJANGO_TARGET_ENV:-beta}"
 
-if [ -f "venv/bin/activate" ]; then
-    source venv/bin/activate
+if [ ! -f "venv/bin/activate" ]; then
+    echo ""
+    echo ">>> PIPELINE_ABORT: venv not found at $(pwd)/venv"
+    echo "    Phase 2 needs Playwright inside a project virtualenv. Run once:"
+    echo "      bash scripts/bootstrap.sh"
+    echo "    Then:"
+    echo "      source venv/bin/activate"
+    echo "      NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh"
+    echo ""
+    exit 1
+fi
+# shellcheck disable=SC1091
+source venv/bin/activate
+
+if ! python3 -c "import playwright" 2>/dev/null; then
+    echo ""
+    echo ">>> PIPELINE_ABORT: Playwright is not installed in venv."
+    echo "    Run: bash scripts/bootstrap.sh"
+    echo "    (or: pip install -r requirements.txt && playwright install chromium)"
+    echo ""
+    exit 1
 fi
 
 export PYTHONUNBUFFERED=1

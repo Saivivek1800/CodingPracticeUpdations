@@ -21,11 +21,21 @@ source venv/bin/activate
 echo "Upgrading pip and installing requirements..."
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install playwright
 
 echo "Installing Chromium for Playwright..."
 playwright install chromium
 
+if [ "$(uname -s)" = "Linux" ]; then
+  echo "Installing Linux system libraries for Chromium (needs network; use sudo if prompted)..."
+  if playwright install-deps chromium 2>/dev/null; then
+    echo "playwright install-deps chromium: OK"
+  else
+    echo "Note: install-deps may need sudo. Run: sudo \$(which playwright) install-deps chromium"
+  fi
+fi
+
 echo ""
-echo "Done. Activate with: source venv/bin/activate"
-echo "On Linux, recommended once: playwright install-deps chromium  (may need sudo)"
+echo "Done. Next:"
+echo "  source venv/bin/activate"
+echo "  bash scripts/check_setup.sh    # verify before pipeline"
+echo "  NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh"

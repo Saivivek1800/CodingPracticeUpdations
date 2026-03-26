@@ -18,12 +18,19 @@ source venv/bin/activate
 
 After clone, ensure `.secrets.env` exists in the repo (maintainer commits it) or copy from `.secrets.env.example` and fill values. Optional: commit `.secrets.enc` instead of plain `.secrets.env` (still sensitive). Session JSON files stay gitignored.
 
-**Teammate quick start:**
+**One command — install everything and run the full pipeline** (from project root):
 
 ```bash
-git pull
-NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
+cd CodingPracticeUpdations && git pull && bash scripts/run_pipeline.sh
 ```
+
+If you use **only** `.secrets.enc` (no filled `.secrets.env`):
+
+```bash
+cd CodingPracticeUpdations && SECRETS_DECRYPTION_KEY='your-validation-key' bash scripts/run_pipeline.sh
+```
+
+**Manual steps** (same result): `bash scripts/bootstrap.sh` → `source venv/bin/activate` → `NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh`
 
 If Phase 2 still fails, see **Diagnosis** in the error output or [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
@@ -135,7 +142,6 @@ Manual equivalent of bootstrap:
 cd django_admin_automation
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
-./venv/bin/pip install playwright
 ./venv/bin/playwright install chromium
 ```
 
@@ -200,7 +206,6 @@ Use Gunicorn + systemd + Nginx.
 cd /opt/django_admin_automation
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
-./venv/bin/pip install playwright
 ./venv/bin/playwright install chromium
 ```
 

@@ -1,3 +1,4 @@
-# Automation dashboard API
+# Automation dashboard API + Playwright admin updaters (Phase 2)
 flask>=3.0.0,<4
 gunicorn>=22.0.0
+playwright>=1.40.0,<2

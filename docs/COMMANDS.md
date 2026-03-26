@@ -46,7 +46,6 @@ python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install playwright
 playwright install chromium
 ```
 
@@ -105,6 +104,18 @@ export DJANGO_TARGET_ENV=beta   # or prod
 ---
 
 ## 5. Run everything (one command)
+
+**Install + full pipeline** (bootstrap then pipeline; run from project root):
+
+```bash
+cd /path/to/django_admin_automation
+bash scripts/run_pipeline.sh
+```
+
+With `.secrets.enc` only: `SECRETS_DECRYPTION_KEY='...' bash scripts/run_pipeline.sh`  
+Prod: `DJANGO_TARGET_ENV=prod bash scripts/run_pipeline.sh`
+
+---
 
 This matches `backend/scripts/run_full_pipeline.sh`: **all formatters**, then **all updaters**, in order. Failed steps are logged and later steps still run.
 

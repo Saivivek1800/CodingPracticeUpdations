@@ -86,8 +86,17 @@ if [ "$RUN_SECRETS_DECRYPT" = "true" ]; then
         fi
         rm -f "$_OPENSSL_ERR"
     elif [ "$NON_INTERACTIVE" = "1" ] && [ -f ".secrets.enc" ]; then
-        echo "Warning: NON_INTERACTIVE=1 but SECRETS_DECRYPTION_KEY is empty — cannot decrypt .secrets.enc." >&2
-        echo "  Export it: SECRETS_DECRYPTION_KEY='your-validation-key' ..." >&2
+        _cred_ok=false
+        if [[ "$ENV_CHOICE" == "prod" ]]; then
+            [ -n "${PROD_W_U:-}" ] && [ -n "${PROD_W_P:-}" ] && _cred_ok=true
+            [ -n "${BETA_W_U:-}" ] && [ -n "${BETA_W_P:-}" ] && _cred_ok=true
+        else
+            [ -n "${BETA_W_U:-}" ] && [ -n "${BETA_W_P:-}" ] && _cred_ok=true
+        fi
+        if [ "$_cred_ok" != "true" ]; then
+            echo "Warning: NON_INTERACTIVE=1 but SECRETS_DECRYPTION_KEY is empty — cannot decrypt .secrets.enc." >&2
+            echo "  Export it, or add BETA_* / PROD_* to .secrets.env: SECRETS_DECRYPTION_KEY='your-validation-key' ..." >&2
+        fi
     fi
 fi
 
