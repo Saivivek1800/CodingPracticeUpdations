@@ -1,0 +1,18 @@
+[Unit]
+Description=Django admin automation dashboard (Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/django_admin_automation
+Environment=PATH=/opt/django_admin_automation/venv/bin
+Environment=FLASK_DEBUG=0
+EnvironmentFile=-/etc/django-admin-automation.env
+ExecStart=/opt/django_admin_automation/venv/bin/gunicorn -c gunicorn.conf.py backend.api.wsgi:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

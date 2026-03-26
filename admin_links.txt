@@ -1,0 +1,76 @@
+NKB_QUESTION -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/
+Ai evaluations -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/aievaluation/
+View -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/aievaluation/
+Answer explanation for questions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/answerexplanationforquestion/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/answerexplanationforquestion/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/answerexplanationforquestion/
+Code analysis questions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/codeanalysisquestion/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/codeanalysisquestion/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/codeanalysisquestion/
+Code blocks -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/codeblock/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/codeblock/
+Coding question solutions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/codingquestionsolution/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/codingquestionsolution/
+Fib coding questions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/fibcodingquestion/
+View -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/fibcodingquestion/
+Fibhtml coding questions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/fibhtmlcodingquestion/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/fibhtmlcodingquestion/
+Html coding question solutions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/htmlcodingquestionsolution/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/htmlcodingquestionsolution/
+Html coding question test case detailss -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/htmlcodingquestiontestcasedetails/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/htmlcodingquestiontestcasedetails/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/htmlcodingquestiontestcasedetails/
+Html coding questions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/htmlcodingquestion/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/htmlcodingquestion/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/htmlcodingquestion/
+Ide based coding question solutions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestionsolution/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestionsolution/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestionsolution/
+Ide based coding question test case details -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestiontestcasedetail/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestiontestcasedetail/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestiontestcasedetail/
+Ide based coding questions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestion/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestion/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/idebasedcodingquestion/
+Multimedias -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/multimedia/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/multimedia/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/multimedia/
+Options -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/option/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/option/
+Prompt configs -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/promptconfig/
+View -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/promptconfig/
+Question configs -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionconfig/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionconfig/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionconfig/
+Question guided solution steps -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionguidedsolutionstep/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionguidedsolutionstep/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionguidedsolutionstep/
+Question set configs -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsetconfig/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsetconfig/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsetconfig/
+Question set hotspot configs -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsethotspotconfig/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsethotspotconfig/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsethotspotconfig/
+Question set questions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsetquestion/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsetquestion/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionsetquestion/
+Question sets -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionset/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionset/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questionset/
+Question tags -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questiontag/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questiontag/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questiontag/
+Question testcases -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questiontestcase/
+View -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/questiontestcase/
+Questions -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/question/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/question/
+Rearrange options -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/rearrangeoption/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/rearrangeoption/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/rearrangeoption/
+Sql question sets -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/sqlquestionset/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/sqlquestionset/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/sqlquestionset/
+Text answers -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/textanswer/
+Add -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/textanswer/add/
+Change -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/textanswer/
+Question object (ac1eada2-19f2-43e0-b2a4-78df02ce9944) -> https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_question/question/ac1eada2-19f2-43e0-b2a4-78df02ce9944/change/

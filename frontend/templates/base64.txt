@@ -1,0 +1,217 @@
+import uuid
+from typing import Dict, Optional, List
+
+from django.db import transaction
+from nkb_coding_core.interactors.storages.code_storage import CodeSnippetDTO
+from nkb_coding_core.storages.code_storage_implementation import \
+    CodeStorageImplementation
+from nkb_question.interactors.storages.coding_question_storage import \
+    CodeRepositoryWithFilesDetailsDTO, FileDetailsDTO
+from nkb_question.models import UserResponse, QuestionCode
+from nkb_question.models.coding_models import QuestionCodeRepository, \
+    CodeRepository, QuestionCodeExtraDetails
+from nkb_question.storages.coding_question_storage_implementation import \
+    CodingQuestionStorageImplementation
+from nkb_question.models import Question
+
+
+@transaction.atomic
+def update_question_to_user_function_evaluation(question_code_repository_data):
+
+    """
+    question_code_repository_data = [
+        {
+            "question_id": "1",
+            "content": "new content",
+            "language_code_repositories": [
+                {
+                    "language": "PYTHON",
+                    "default_code": "print('Hello World')",
+                    "file_path_to_execute": "string",
+                    "default_file_path_to_submit_code": "string",
+                    "file_details": [
+                        {
+                            "file_name": "string",
+                            "file_type": "string",
+                            "file_content": "string",
+                            "child_files": [
+                                {
+                                    "file_name": "string",
+                                    "file_type": "string",
+                                    "file_content": "string",
+                                    "child_files": [
+
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+    """
+
+    # user_response_question_ids = []
+    # for question in question_code_repository_data:
+    #     question_id = question['question_id']
+    #     is_question_user_response_exists = \
+    #         UserResponse.objects.filter(question_id=question_id).exists()
+    #     if is_question_user_response_exists:
+    #         user_response_question_ids.append(question_id)
+    #
+    # if user_response_question_ids:
+    #     raise Exception("User response exists for question ids:",
+    #                     user_response_question_ids)
+    # update_question_content = []
+    # for question in question_code_repository_data:
+    #     id = question['question_id']
+    #     content = question['content']
+    #     update_question_content.append(
+    #         Question(id=id, content=content)
+    #     )
+
+    question_id_wise_update_content = {}
+
+    for question in question_code_repository_data:
+        question_id = question['question_id']
+        question_content = question.get('content_to_update')
+        if question_content:
+            question_id_wise_update_content[question_id] = question_content
+        
+        print("Question Code Repositories started for question id: ",
+              question_id)
+        language_code_repositories = question['language_code_repositories']
+
+        question_code = QuestionCode.objects.get(question_id=question_id)
+        question_code_id = question_code.id
+        code_id = question_code.code_id
+
+        code_snippets = []
+        create_question_code_repositories = []
+        create_question_code_extra_details = []
+        update_question_code_extra_details = []
+        update_question_code_repositories = []
+        code_repositories_dtos = []
+        delete_code_repository_ids = []
+
+        question_language_repository = QuestionCodeRepository.objects.filter(
+            question_code_id=question_code_id)
+        question_code_langauge_wise_repository = {}
+        for question_langauge_repository in question_language_repository:
+            question_code_langauge_wise_repository[
+                question_langauge_repository.language] = \
+                question_langauge_repository
+
+        question_code_extra_details = QuestionCodeExtraDetails.objects.filter(question_code_id=question_code_id)
+        question_code_language_wise_extra_details = {
+            str(each.language): each
+            for each in question_code_extra_details}
+
+        for code_repository in language_code_repositories:
+            language = code_repository['language']
+            default_code = code_repository.get('default_code', None)
+            if default_code:
+                code_snippet = CodeSnippetDTO(code_id=code_id,
+                                              code_content=default_code,
+                                              language=language,
+                                              default_code=None)
+                code_snippets.append(code_snippet)
+
+            file_details_dtos = []
+            for file_details in code_repository['file_details']:
+                file_details_dtos.extend(convert_file_details_to_dtos(
+                    file_details=file_details, parent_file_id=None,
+                ))
+
+            code_repository_id = str(uuid.uuid4())
+            code_repositories_dtos.append(CodeRepositoryWithFilesDetailsDTO(
+                id=code_repository_id,
+                file_path_to_execute=code_repository['file_path_to_execute'],
+                default_file_path_to_submit_code=code_repository[
+                    'default_file_path_to_submit_code'],
+                file_details_dtos=file_details_dtos
+            ))
+
+            question_code_repository_obj = \
+                question_code_langauge_wise_repository.get(language)
+
+            if question_code_repository_obj:
+                delete_code_repository_ids.append(
+                    question_code_repository_obj.code_repository_id)
+                question_code_repository_obj.code_repository_id = code_repository_id
+                update_question_code_repositories.append(
+                    question_code_repository_obj)
+            else:
+                question_code_repository = QuestionCodeRepository(
+                    question_code_id=question_code_id,
+                    language=language,
+                    code_repository_id=code_repository_id
+                )
+                create_question_code_repositories.append(
+                    question_code_repository)
+            question_code_extra_details = question_code_language_wise_extra_details.get(language)
+            if question_code_extra_details:
+                update_question_code_extra_details.append(
+                    question_code_extra_details
+                )
+            else:
+                create_question_code_extra_details.append(
+                    QuestionCodeExtraDetails(
+                        question_code_id=question_code_id,
+                        language=language,
+                        is_function_based=True
+                    )
+                )
+                
+
+        coding_question_storage = CodingQuestionStorageImplementation()
+        coding_question_storage.create_code_repositories(code_repositories_dtos)
+
+        code_storage = CodeStorageImplementation()
+        code_storage.create_and_update_code_snippets(code_snippets)
+
+        QuestionCodeRepository.objects.bulk_create(
+            create_question_code_repositories)
+        QuestionCodeExtraDetails.objects.bulk_create(
+            create_question_code_extra_details)
+        QuestionCodeExtraDetails.objects.bulk_update(
+            update_question_code_extra_details, ["is_function_based"])
+        QuestionCodeRepository.objects.bulk_update(
+            update_question_code_repositories, ['code_repository'])
+
+        if delete_code_repository_ids:
+            CodeRepository.objects.filter(
+                id__in=delete_code_repository_ids).delete()
+
+        print("Question Code Repositories created/updated for question id: ",
+              question_id)
+        question_ids = list(question_id_wise_update_content.keys())
+        questions = Question.objects.filter(id__in=question_ids)
+        for question in questions:
+            question.content = question_id_wise_update_content.get(str(question.id))
+            question.save()
+
+        print("updated question content for question_ids", question_ids)
+
+
+def convert_file_details_to_dtos(
+        file_details: Dict[str, str],
+        parent_file_id: Optional[str]) -> List[FileDetailsDTO]:
+    file_details_dtos = []
+    file_id = str(uuid.uuid4())
+    file_details_dto = FileDetailsDTO(
+        id=file_id,
+        file_name=file_details['file_name'],
+        file_content=file_details['file_content'],
+        file_type=file_details['file_type'],
+        parent_file_id=parent_file_id,
+    )
+    file_details_dtos.append(file_details_dto)
+    for child_file in file_details.get('child_files', []):
+        child_file_details_dtos = convert_file_details_to_dtos(
+            file_details=child_file, parent_file_id=file_id,
+        )
+        file_details_dtos += child_file_details_dtos
+        
+    return file_details_dtos

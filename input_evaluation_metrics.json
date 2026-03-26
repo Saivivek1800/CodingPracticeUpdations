@@ -1,0 +1,40 @@
+{
+    "evaluation_metrics_by_question": {
+        "6b05b27f-77fe-4be5-ac4a-099d6851c9d4": [
+            {
+                "language": "CPP",
+                "time_limit_to_execute_in_seconds": 1.0
+            },
+            {
+                "language": "PYTHON",
+                "time_limit_to_execute_in_seconds": 4.0
+            },
+            {
+                "language": "JAVA",
+                "time_limit_to_execute_in_seconds": 2.0
+            },
+            {
+                "language": "NODE_JS",
+                "time_limit_to_execute_in_seconds": 2.0
+            }
+        ],
+        "09c7c836-4202-4488-8d4b-1f42b6dcd1ab": [
+            {
+                "language": "CPP",
+                "time_limit_to_execute_in_seconds": 1.0
+            },
+            {
+                "language": "PYTHON",
+                "time_limit_to_execute_in_seconds": 4.0
+            },
+            {
+                "language": "JAVA",
+                "time_limit_to_execute_in_seconds": 2.0
+            },
+            {
+                "language": "NODE_JS",
+                "time_limit_to_execute_in_seconds": 2.0
+            }
+        ]
+    }
+}

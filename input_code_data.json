@@ -1,0 +1,74 @@
+{
+    "300c7a8e-728e-4844-b996-2fac04d65a7e": [
+        {
+            "code_content": "#include <bits/stdc++.h>\nusing namespace std;\n\nclass solution {\npublic:\n    int countUniqueEmailGroups(vector<string>& emails) {\n        // Write your code here...\n        \n    }\n};",
+            "language": "CPP"
+        },
+        {
+            "code_content": "class solution:\n    def countUniqueEmailGroups(self, emails):\n        # Write your code here...\n        pass",
+            "language": "PYTHON"
+        },
+        {
+            "code_content": "import java.util.*;\n\npublic class Solution {\n    public int countUniqueEmailGroups(String[] emails) {\n        // Write your code here...\n        return 0;\n    }\n}",
+            "language": "JAVA"
+        },
+        {
+            "code_content": "class Solution {\n    countUniqueEmailGroups(emails) {\n        // Write your code here...\n    }\n}",
+            "language": "NODE_JS"
+        }
+    ],
+    "26261001-23d0-4746-8388-87372ef2a682": [
+        {
+            "code_content": "#include <bits/stdc++.h>\nusing namespace std;\n\nclass solution {\npublic:\n    int countUniqueEmailGroups(vector<string>& emails) {\n        unordered_set<string> st;\n        for (string email : emails) {\n            size_t atPos = email.find('@');\n            string local = email.substr(0, atPos);\n            string domain = email.substr(atPos + 1);\n            transform(domain.begin(), domain.end(), domain.begin(), ::tolower);\n            transform(local.begin(), local.end(), local.begin(), ::tolower);\n            size_t plusPos = local.find('+');\n            if (plusPos != string::npos) {\n                local = local.substr(0, plusPos);\n            }\n            local.erase(remove(local.begin(), local.end(), '.'), local.end());\n            st.insert(local + \"@\" + domain);\n        }\n        return st.size();\n    }\n};",
+            "language": "CPP"
+        },
+        {
+            "code_content": "class solution:\n    def countUniqueEmailGroups(self, emails):\n        st = set()\n        for email in emails:\n            local, domain = email.split('@', 1)\n            domain = domain.lower()\n            local = local.lower()\n            plus = local.find('+')\n            if plus != -1:\n                local = local[:plus]\n            local = local.replace('.', '')\n            st.add(local + '@' + domain)\n        return len(st)",
+            "language": "PYTHON"
+        },
+        {
+            "code_content": "import java.util.*;\n\npublic class Solution {\n    public int countUniqueEmailGroups(String[] emails) {\n        Set<String> st = new HashSet<>();\n        for (String email : emails) {\n            String[] parts = email.split(\"@\", 2);\n            String local = parts[0].toLowerCase();\n            String domain = parts[1].toLowerCase();\n            int plus = local.indexOf('+');\n            if (plus != -1) {\n                local = local.substring(0, plus);\n            }\n            local = local.replace(\".\", \"\");\n            st.add(local + \"@\" + domain);\n        }\n        return st.size();\n    }\n}",
+            "language": "JAVA"
+        },
+        {
+            "code_content": "class Solution {\n    countUniqueEmailGroups(emails) {\n        const st = new Set();\n        for (let email of emails) {\n            let [local, domain] = email.split('@');\n            domain = domain.toLowerCase();\n            local = local.toLowerCase();\n            const plus = local.indexOf('+');\n            if (plus !== -1) {\n                local = local.substring(0, plus);\n            }\n            local = local.replace(/\\./g, '');\n            st.add(local + '@' + domain);\n        }\n        return st.size;\n    }\n}",
+            "language": "NODE_JS"
+        }
+    ],
+    "b02d83df-2f6a-43d7-b804-8ef60346b9b3": [
+        {
+            "code_content": "#include <bits/stdc++.h>\nusing namespace std;\n\nclass solution {\npublic:\n    int calculateTypingDistance(string text) {\n        // Write your code here...\n        \n    }\n};",
+            "language": "CPP"
+        },
+        {
+            "code_content": "class solution:\n    def calculateTypingDistance(self, text):\n        # Write your code here...\n        pass",
+            "language": "PYTHON"
+        },
+        {
+            "code_content": "import java.util.*;\n\npublic class Solution {\n    public int calculateTypingDistance(String text) {\n        // Write your code here...\n        return 0;\n    }\n}",
+            "language": "JAVA"
+        },
+        {
+            "code_content": "class Solution {\n    calculateTypingDistance(text) {\n        // Write your code here...\n    }\n}",
+            "language": "NODE_JS"
+        }
+    ],
+    "be68b7c5-1907-4351-ad68-6fa937aa6e38": [
+        {
+            "code_content": "#include <bits/stdc++.h>\nusing namespace std;\n\nclass solution {\npublic:\n    int calculateTypingDistance(string text) {\n        unordered_map<char, pair<int, int>> pos;\n\n        string row0 = \"qwertyuiop\";\n        string row1 = \"asdfghjkl\";\n        string row2 = \"zxcvbnm\";\n\n        for (int c = 0; c < row0.size(); ++c) {\n            pos[row0[c]] = {0, c};\n        }\n        for (int c = 0; c < row1.size(); ++c) {\n            pos[row1[c]] = {1, c};\n        }\n        for (int c = 0; c < row2.size(); ++c) {\n            pos[row2[c]] = {2, c};\n        }\n\n        int ans = 0;\n        char cur = 'a';\n\n        for (char ch : text) {\n            pair<int,int> p1 = pos[cur];\n            pair<int,int> p2 = pos[ch];\n\n            int r1 = p1.first;\n            int c1 = p1.second;\n            int r2 = p2.first;\n            int c2 = p2.second;\n\n            ans += abs(r1 - r2) + abs(c1 - c2);\n            cur = ch;\n        }\n\n        return ans;\n    }\n};",
+            "language": "CPP"
+        },
+        {
+            "code_content": "class solution:\n    def calculateTypingDistance(self, text):\n        pos = {}\n        row0 = \"qwertyuiop\"\n        row1 = \"asdfghjkl\"\n        row2 = \"zxcvbnm\"\n        for c, ch in enumerate(row0):\n            pos[ch] = (0, c)\n        for c, ch in enumerate(row1):\n            pos[ch] = (1, c)\n        for c, ch in enumerate(row2):\n            pos[ch] = (2, c)\n        ans = 0\n        cur = 'a'\n        for ch in text:\n            r1, c1 = pos[cur]\n            r2, c2 = pos[ch]\n            ans += abs(r1 - r2) + abs(c1 - c2)\n            cur = ch\n        return ans",
+            "language": "PYTHON"
+        },
+        {
+            "code_content": "import java.util.*;\n\npublic class Solution {\n    public int calculateTypingDistance(String text) {\n        Map<Character, int[]> pos = new HashMap<>();\n        String row0 = \"qwertyuiop\";\n        String row1 = \"asdfghjkl\";\n        String row2 = \"zxcvbnm\";\n        for (int c = 0; c < row0.length(); c++) {\n            pos.put(row0.charAt(c), new int[]{0, c});\n        }\n        for (int c = 0; c < row1.length(); c++) {\n            pos.put(row1.charAt(c), new int[]{1, c});\n        }\n        for (int c = 0; c < row2.length(); c++) {\n            pos.put(row2.charAt(c), new int[]{2, c});\n        }\n        int ans = 0;\n        char cur = 'a';\n        for (char ch : text.toCharArray()) {\n            int[] currentPos = pos.get(cur);\n            int[] nextPos = pos.get(ch);\n            ans += Math.abs(currentPos[0] - nextPos[0]) + Math.abs(currentPos[1] - nextPos[1]);\n            cur = ch;\n        }\n        return ans;\n    }\n}",
+            "language": "JAVA"
+        },
+        {
+            "code_content": "class Solution {\n    calculateTypingDistance(text) {\n        const pos = {};\n        const row0 = \"qwertyuiop\";\n        const row1 = \"asdfghjkl\";\n        const row2 = \"zxcvbnm\";\n        for (let c = 0; c < row0.length; c++) {\n            pos[row0[c]] = [0, c];\n        }\n        for (let c = 0; c < row1.length; c++) {\n            pos[row1[c]] = [1, c];\n        }\n        for (let c = 0; c < row2.length; c++) {\n            pos[row2[c]] = [2, c];\n        }\n        let ans = 0;\n        let cur = 'a';\n        for (const ch of text) {\n            const [r1, c1] = pos[cur];\n            const [r2, c2] = pos[ch];\n            ans += Math.abs(r1 - r2) + Math.abs(c1 - c2);\n            cur = ch;\n        }\n        return ans;\n    }\n}",
+            "language": "NODE_JS"
+        }
+    ]
+}
