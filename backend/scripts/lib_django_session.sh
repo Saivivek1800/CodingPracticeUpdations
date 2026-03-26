@@ -105,7 +105,33 @@ fi
 if [ "$USE_SESSION" != "true" ]; then
     if [ -z "$DJANGO_ADMIN_USERNAME" ] || [ -z "$DJANGO_ADMIN_PASSWORD" ]; then
         echo "Error: No saved session found and no credentials loaded."
-        echo "  - Run once with credentials to create $SESSION_FILE, or add .secrets.env."
+        echo ""
+        echo "Diagnosis (project root: $(pwd)):"
+        if [ -f ".secrets.env" ]; then
+            echo "  - .secrets.env: EXISTS"
+            if [[ "$ENV_CHOICE" == "prod" ]]; then
+                [ -z "${PROD_W_U:-}" ] && echo "    but PROD_DJANGO_ADMIN_USERNAME is empty after load"
+                [ -z "${PROD_W_P:-}" ] && echo "    but PROD_DJANGO_ADMIN_PASSWORD is empty after load"
+            else
+                [ -z "${BETA_W_U:-}" ] && echo "    but BETA_DJANGO_ADMIN_USERNAME is empty after load — fill it or fix typos / quotes"
+                [ -z "${BETA_W_P:-}" ] && echo "    but BETA_DJANGO_ADMIN_PASSWORD is empty after load"
+            fi
+        else
+            echo "  - .secrets.env: MISSING (copy from .secrets.env.example and fill values)"
+        fi
+        if [ -f ".secrets.enc" ]; then
+            echo "  - .secrets.enc: EXISTS"
+            if [ "$NON_INTERACTIVE" = "1" ] && [ -z "${SECRETS_DECRYPTION_KEY:-}" ]; then
+                echo "    but NON_INTERACTIVE=1 and SECRETS_DECRYPTION_KEY is unset — export the Validation Key from setup_secrets.sh"
+            fi
+        else
+            echo "  - .secrets.enc: MISSING (optional; or copy from teammate via secure channel)"
+        fi
+        echo "  - $SESSION_FILE: $([ -f "$SESSION_FILE" ] && echo EXISTS || echo MISSING)"
+        echo ""
+        echo "Fix (pick one):"
+        echo "  1) cp .secrets.env.example .secrets.env  # then edit with real beta admin user/password"
+        echo "  2) SECRETS_DECRYPTION_KEY='...' NON_INTERACTIVE=1 ...  # same key as setup_secrets.sh + .secrets.enc in this folder"
         echo ""
         echo ">>> PIPELINE_EXCEPTION"
         echo ">>>   phase:   PHASE_2_PERFORM_ACTIONS (Django env)"

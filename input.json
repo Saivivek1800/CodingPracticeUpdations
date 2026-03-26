@@ -3,7 +3,7 @@
         "test_cases": [
             {
                 "id": "8e041661-fb69-440d-92ec-af7c6643bb98",
-                "input": "python3 generate_input_data.py",
+                "input": "python3 generate_input_data.",
                 "output": "2",
                 "is_hidden": false,
                 "weightage": 1,
