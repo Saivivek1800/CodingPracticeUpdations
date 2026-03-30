@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editorial Updater</title>
+    <title>Extract Coding JSON</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -43,11 +43,11 @@
                         Main Updater
                     </a>
                     <a href="/editorial"
-                        class="rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-3 py-2 text-xs md:text-sm text-cyan-100">
+                        class="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs md:text-sm text-slate-200 hover:bg-white/10 transition-colors">
                         Editorial Updater
                     </a>
                     <a href="/extract-coding"
-                        class="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs md:text-sm text-slate-200 hover:bg-white/10 transition-colors">
+                        class="rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-3 py-2 text-xs md:text-sm text-cyan-100">
                         Extract Coding JSON
                     </a>
                 </div>
@@ -56,24 +56,27 @@
 
         <header class="mb-6">
             <p class="text-cyan-400/90 text-sm font-medium tracking-wide uppercase mb-2">Django admin automation</p>
-            <h1 class="text-3xl font-bold text-white mb-2">Editorial update by Question ID</h1>
+            <h1 class="text-3xl font-bold text-white mb-2">Extract coding question → convert JSON</h1>
             <p class="text-slate-400 text-sm">
-                Paste JSON in format <code class="text-cyan-300">{"<question_uuid>": "<editorial html/text>"}</code>, then click update.
+                This flow triggers <code class="text-cyan-300">EXTRACT_CODING_QUESTION_CONTENT</code> in admin,
+                waits for success, downloads output JSON, and converts to coding format.
             </p>
         </header>
 
         <div class="rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:p-5">
-            <label for="editorialJson" class="text-sm text-slate-300 block mb-2">Editorial input JSON</label>
-            <textarea id="editorialJson" rows="16"
+            <label for="extractJson" class="text-sm text-slate-300 block mb-2">Input JSON</label>
+            <textarea id="extractJson" rows="10"
                 class="w-full bg-slate-950/80 text-slate-300 border border-slate-600 rounded-lg p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500/40 resize-y"
                 placeholder='{
-  "9405deff-6e49-48d3-8cbe-5b78533c9ad0": "<p>Editorial content here...</p>"
+  "question_ids": [
+    "eda0bece-8569-43fc-9f61-b358823e2977"
+  ]
 }'></textarea>
 
             <div class="mt-4 flex items-center gap-3">
-                <button id="runEditorialBtn"
+                <button id="runExtractBtn"
                     class="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-5 py-2.5 text-sm text-cyan-100 hover:bg-cyan-500/20 transition-colors">
-                    Update Editorials
+                    Run Extract + Convert
                 </button>
                 <span id="statusLine" class="text-xs text-slate-500"></span>
             </div>
@@ -86,13 +89,38 @@
             </div>
             <div id="terminal" class="terminal p-4 whitespace-pre-wrap"></div>
         </div>
+
+        <div class="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:p-5">
+            <label for="convertedJson" class="text-sm text-slate-300 block mb-2">Converted coding JSON output</label>
+            <textarea id="convertedJson" rows="14" readonly
+                class="w-full bg-slate-950/80 text-slate-300 border border-slate-600 rounded-lg p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500/40 resize-y"
+                placeholder="Converted JSON will appear here after successful run..."></textarea>
+        </div>
     </main>
 
     <script>
-        const runBtn = document.getElementById('runEditorialBtn');
-        const editor = document.getElementById('editorialJson');
+        const runBtn = document.getElementById('runExtractBtn');
+        const editor = document.getElementById('extractJson');
         const terminal = document.getElementById('terminal');
         const statusLine = document.getElementById('statusLine');
+        const convertedOutput = document.getElementById('convertedJson');
+        let hasDownloaded = false;
+
+        function downloadConvertedJson(prettyJsonText) {
+            try {
+                const blob = new Blob([prettyJsonText], { type: 'application/json;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'coding_questions_output.json';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                logLine('WARN: Auto-download failed: ' + e, 'warn');
+            }
+        }
 
         function setRunning(running) {
             runBtn.disabled = running;
@@ -113,20 +141,23 @@
             terminal.scrollTop = terminal.scrollHeight;
         }
 
-        function runEditorialUpdate() {
+        function runExtract() {
             if (runBtn.disabled) return;
             const rawJson = editor.value || '';
             const content = rawJson.trim();
 
             if (!content) {
                 terminal.textContent = '';
-                logLine('Editorial JSON is required.', 'err');
+                logLine('Input JSON is required.', 'err');
                 statusLine.textContent = 'missing input';
                 return;
             }
 
             try {
-                JSON.parse(content);
+                const obj = JSON.parse(content);
+                if (!obj || !Array.isArray(obj.question_ids) || obj.question_ids.length === 0) {
+                    throw new Error('JSON must contain non-empty "question_ids" array.');
+                }
             } catch (e) {
                 terminal.textContent = '';
                 logLine('Invalid JSON: ' + (e && e.message ? e.message : e), 'err');
@@ -135,9 +166,11 @@
             }
 
             terminal.textContent = '';
+            convertedOutput.value = '';
+            hasDownloaded = false;
             setRunning(true);
 
-            fetch('/api/run_editorial_update', {
+            fetch('/api/run_extract_coding', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content: rawJson })
@@ -163,9 +196,25 @@
                                     logLine('── Done ──', 'ok');
                                     continue;
                                 }
+                                if (raw.startsWith('>>> CONVERTED_JSON: ')) {
+                                    try {
+                                        const compact = raw.slice('>>> CONVERTED_JSON: '.length);
+                                        const obj = JSON.parse(compact);
+                                        const pretty = JSON.stringify(obj, null, 2);
+                                        convertedOutput.value = pretty;
+                                        if (!hasDownloaded) {
+                                            downloadConvertedJson(pretty);
+                                            hasDownloaded = true;
+                                            logLine('Auto-downloaded: coding_questions_output.json', 'ok');
+                                        }
+                                    } catch (e) {
+                                        logLine('WARN: Failed to parse streamed converted JSON: ' + e, 'warn');
+                                    }
+                                    continue;
+                                }
                                 if (raw.includes('PIPELINE_EXCEPTION') || raw.includes('>>> FAILED') || raw.includes('>>> ERROR')) logLine(raw, 'err');
                                 else if (raw.includes('PIPELINE_SKIP') || raw.includes('PIPELINE_SUMMARY')) logLine(raw, 'warn');
-                                else if (raw.includes('>>> RUNNING') || raw.includes('>>> SUCCESS')) logLine(raw, 'hdr');
+                                else if (raw.includes('>>> RUNNING') || raw.includes('>>> SUCCESS') || raw.includes('>>> OUTPUT')) logLine(raw, 'hdr');
                                 else logLine(raw);
                             }
                             return pump();
@@ -181,7 +230,7 @@
                 });
         }
 
-        runBtn.addEventListener('click', runEditorialUpdate);
+        runBtn.addEventListener('click', runExtract);
     </script>
 </body>
 

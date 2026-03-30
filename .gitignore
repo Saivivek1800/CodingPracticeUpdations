@@ -3,6 +3,10 @@ venv/
 .venv/
 env/
 
+# Secrets (do not expose)
+.secrets.env
+.secrets.enc
+
 # Session cookies (local only — expire; redundant if .secrets.env is in repo)
 beta_admin_session.json
 prod_admin_session.json

@@ -64,7 +64,24 @@ PIPELINE_LOCK = threading.Lock()
 PIPELINE_WORKERS = max(1, int(os.environ.get("PIPELINE_WORKERS", "5")))
 
 
+def _sanitize_log_line(line: str) -> str:
+    """Mask obvious secrets before writing logs/SSE output."""
+    if not isinstance(line, str):
+        line = str(line)
+    patterns = [
+        r"(?i)\b([A-Z0-9_]*(?:PASSWORD|TOKEN|SECRET|API_KEY)[A-Z0-9_]*)\s*=\s*([^\s\"']+)",
+        r"(?i)\b(password|token|secret|api[_-]?key)\s*[:=]\s*([^\s\"']+)",
+        r"(?i)(X-Amz-Signature=)[0-9a-f]+",
+    ]
+    out = line
+    out = re.sub(patterns[0], r"\1=***", out)
+    out = re.sub(patterns[1], r"\1=***", out)
+    out = re.sub(patterns[2], r"\1***", out)
+    return out
+
+
 def _job_append(job_id, line):
+    line = _sanitize_log_line(line)
     log_file = None
     with PIPELINE_LOCK:
         job = PIPELINE_JOBS.get(job_id)
@@ -129,7 +146,7 @@ def _pipeline_worker():
                 env=run_env,
             )
             for line in iter(process.stdout.readline, ""):
-                _job_append(job_id, line)
+                _job_append(job_id, _sanitize_log_line(line))
             process.stdout.close()
             rc = process.wait()
 
@@ -337,7 +354,7 @@ def generate_output(scripts, session_id, is_bash=False):
                 )
 
             for line in iter(process.stdout.readline, ""):
-                yield f"data: {line}\n\n"
+                yield f"data: {_sanitize_log_line(line)}\n\n"
 
             process.stdout.close()
             return_code = process.wait()
@@ -413,7 +430,7 @@ def generate_testcases_only(content: str):
                 )
 
             for line in iter(process.stdout.readline, ""):
-                yield f"data: {line}\n\n"
+                yield f"data: {_sanitize_log_line(line)}\n\n"
             process.stdout.close()
             rc = process.wait()
             if rc != 0:
@@ -507,7 +524,7 @@ def generate_editorial_update(content: str):
                 if current_qid not in seen_failed:
                     seen_failed.add(current_qid)
                     failed_qids.append(current_qid)
-            yield f"data: {line}\n\n"
+            yield f"data: {_sanitize_log_line(line)}\n\n"
         process.stdout.close()
         rc = process.wait()
         yield (
@@ -526,6 +543,78 @@ def generate_editorial_update(content: str):
             yield "data: >>> SUCCESS: editorial update completed successfully.\n\n"
     except Exception as e:
         yield f"data: >>> ERROR: Exception while running editorial update: {e}\n\n"
+    yield "data: >>> DONE\n\n"
+
+
+def generate_extract_coding_json(content: str):
+    try:
+        payload = json.loads(content)
+        if not isinstance(payload, dict) or not isinstance(payload.get("question_ids"), list) or not payload.get("question_ids"):
+            raise ValueError("Input must be JSON object with non-empty 'question_ids' array.")
+        session_id = f"extract_{uuid.uuid4().hex}"
+        session_dir = init_session(session_id)
+        input_path = os.path.join(session_dir, "input_extract_question.json")
+        with open(input_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except json.JSONDecodeError as e:
+        yield f"data: >>> ERROR: Invalid JSON in content: {e}\n\n"
+        yield "data: >>> DONE\n\n"
+        return
+    except Exception as e:
+        yield f"data: >>> ERROR: Failed to prepare extraction input: {e}\n\n"
+        yield "data: >>> DONE\n\n"
+        return
+
+    script_path = os.path.join(session_dir, "backend", "scripts", "run_extract_to_coding_json.sh")
+    run_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    run_env["NON_INTERACTIVE"] = "1"
+    run_env["DJANGO_TARGET_ENV"] = run_env.get("DJANGO_TARGET_ENV", "beta")
+    yield "data: >>> RUNNING: run_extract_to_coding_json.sh input_extract_question.json extracted_coding_questions.json coding_questions_output.json\n\n"
+    try:
+        process = subprocess.Popen(
+            [
+                "/bin/bash",
+                script_path,
+                "input_extract_question.json",
+                "extracted_coding_questions.json",
+                "coding_questions_output.json",
+            ],
+            cwd=session_dir,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=run_env,
+        )
+        if process.stdin:
+            try:
+                process.stdin.write("beta\n\n")
+                process.stdin.flush()
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+        for line in iter(process.stdout.readline, ""):
+            yield f"data: {_sanitize_log_line(line)}\n\n"
+        process.stdout.close()
+        rc = process.wait()
+        if rc != 0:
+            yield f"data: >>> FAILED: extract-to-coding pipeline exited with code {rc}\n\n"
+        else:
+            yield "data: >>> SUCCESS: extracted and converted coding JSON successfully.\n\n"
+            out_path = os.path.join(session_dir, "coding_questions_output.json")
+            raw_path = os.path.join(session_dir, "extracted_coding_questions.json")
+            yield f"data: >>> OUTPUT: {out_path}\n\n"
+            yield f"data: >>> RAW_OUTPUT: {raw_path}\n\n"
+            try:
+                with open(out_path, "r", encoding="utf-8") as f:
+                    converted_obj = json.load(f)
+                converted_compact = json.dumps(converted_obj, separators=(",", ":"), ensure_ascii=False)
+                yield f"data: >>> CONVERTED_JSON: {converted_compact}\n\n"
+            except Exception as e:
+                yield f"data: >>> WARN: could not stream converted JSON content: {e}\n\n"
+    except Exception as e:
+        yield f"data: >>> ERROR: Exception while running extract-to-coding pipeline: {e}\n\n"
     yield "data: >>> DONE\n\n"
 
 
@@ -600,6 +689,11 @@ def editorial_page():
     return render_template("editorial.html")
 
 
+@app.route("/extract-coding")
+def extract_coding_page():
+    return render_template("extract_coding.html")
+
+
 @app.route("/api/run_editorial_update", methods=["POST"])
 def run_editorial_update():
     data = request.json or {}
@@ -607,6 +701,15 @@ def run_editorial_update():
     if content is None or not str(content).strip():
         return jsonify({"success": False, "message": "Editorial JSON is required."}), 400
     return Response(generate_editorial_update(content), mimetype="text/event-stream")
+
+
+@app.route("/api/run_extract_coding", methods=["POST"])
+def run_extract_coding():
+    data = request.json or {}
+    content = data.get("content")
+    if content is None or not str(content).strip():
+        return jsonify({"success": False, "message": "Extract input JSON is required."}), 400
+    return Response(generate_extract_coding_json(content), mimetype="text/event-stream")
 
 
 @app.route("/health", methods=["GET"])

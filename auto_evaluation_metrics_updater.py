@@ -245,11 +245,17 @@ def _changelist_search_by_question_id(page, list_base: str, qid: str) -> list[st
 
 
 def _try_fetch_metric_hrefs(page, qid: str) -> list[str]:
+    max_tries = int(os.environ.get("DJANGO_EVAL_METRICS_MAX_CHANGELIST_TRIES", "12"))
+    tries = 0
     for list_url in _list_url_bases():
         hrefs = _changelist_search_by_question_id(page, list_url, qid)
         if hrefs:
             return hrefs
         for cand in _changelist_query_urls(list_url, qid):
+            if tries >= max_tries:
+                print(f"  WARN: reached max changelist tries ({max_tries}); stopping further URL probes.")
+                return []
+            tries += 1
             print(f"  Opening changelist: {cand}")
             try:
                 r = page.goto(cand, wait_until="domcontentloaded", timeout=GOTO_TIMEOUT_MS)
@@ -257,6 +263,10 @@ def _try_fetch_metric_hrefs(page, qid: str) -> list[str]:
             except Exception as e:
                 print(f"  WARN: navigation failed: {e}")
                 continue
+            # If kicked to login / no auth, stop immediately.
+            if page.locator("#id_username").count() > 0 and page.locator("#id_password").count() > 0:
+                print("  ERROR: landed on login page while probing changelist (session/permission issue).")
+                return []
             if "403 Forbidden" in page.title() or "403 Forbidden" in page.content():
                 print("  ERROR: 403 on changelist — check permissions.")
                 return []

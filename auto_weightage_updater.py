@@ -66,6 +66,11 @@ def update_testcase_weightages(json_file):
             page.goto(target_url)
             page.wait_for_load_state("networkidle")
 
+            if page.locator("#id_username").count() > 0 and page.locator("#id_password").count() > 0:
+                print(f"Error: Redirected to login while opening test case '{testcase_id}'.")
+                print(f"Current URL: {page.url}\n")
+                continue
+
             if "change" not in page.url or page.is_visible(".errornote"):
                 print(f"Error: Could not access test case '{testcase_id}'. Are you sure the ID is correct and you have permission?")
                 print(f"Current URL: {page.url}\n")
@@ -73,16 +78,40 @@ def update_testcase_weightages(json_file):
 
             print(f"Updating weightage to {new_weightage}...")
             try:
-                # Assuming the field is id_weightage. Wait a short moment to be safe.
-                page.wait_for_selector("#id_weightage", timeout=5000)
-                
+                # Field id differs across envs; try common ids first.
+                field_selector = None
+                for sel in ("#id_weightage", "#id_score", "#id_test_case_weightage"):
+                    if page.locator(sel).count() > 0:
+                        field_selector = sel
+                        break
+                if not field_selector:
+                    # Last resort: locate by label text containing "weightage".
+                    field_id = page.evaluate(
+                        """() => {
+                            for (const lb of document.querySelectorAll('label')) {
+                                const t = (lb.textContent || '').toLowerCase();
+                                if (t.includes('weightage')) return lb.getAttribute('for') || null;
+                            }
+                            return null;
+                        }"""
+                    )
+                    if field_id:
+                        field_selector = f"#{field_id}"
+
+                if not field_selector:
+                    print("Error: Could not find a weightage input field on this page.")
+                    print(f"Current URL: {page.url}\n")
+                    continue
+
+                page.wait_for_selector(field_selector, timeout=5000)
+
                 # Read current weightage just for logs
-                old_weightage = page.input_value("#id_weightage")
+                old_weightage = page.input_value(field_selector)
                 print(f"  Old weightage was: {old_weightage}")
-                
+
                 # Fill new weightage
-                page.fill("#id_weightage", str(new_weightage))
-                
+                page.fill(field_selector, str(new_weightage))
+
                 # Save the form
                 print("Saving changes...")
                 page.click("input[name='_save']")
@@ -94,7 +123,7 @@ def update_testcase_weightages(json_file):
                     print(f"Warning: Success message not detected after saving '{testcase_id}'. Please verify manually.\n")
                     
             except Exception as e:
-                print(f"Error updating weightage for '{testcase_id}' (maybe the field is not named id_weightage?): {e}\n")
+                print(f"Error updating weightage for '{testcase_id}': {e}\n")
                 
         browser.close()
 

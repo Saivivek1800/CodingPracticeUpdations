@@ -109,7 +109,13 @@ def run_code_updater(json_file):
                 print(f">>>   detail:  {e}")
                 sys.exit(1)
 
-            # Set Task Type to UPDATE_CODE_CONTENT
+            # Set Task Type to UPDATE_CODE_CONTENT.
+            # In some prod accounts, add page may be inaccessible or a different form.
+            task_type_loc = page.locator("#id_task_type")
+            if task_type_loc.count() == 0:
+                print("SKIP: Content loading task form not available (#id_task_type missing).")
+                print("  Likely no permission in this environment/account; skipping code updater.")
+                return
             page.select_option("#id_task_type", "UPDATE_CODE_CONTENT")
 
             print("Filling input data with file content...")

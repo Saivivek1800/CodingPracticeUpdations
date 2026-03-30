@@ -71,17 +71,40 @@ UPDATERS=(
     "run_loader.sh"
 )
 
-if [ "${SKIP_TESTCASES:-0}" = "1" ]; then
+if [ "${DJANGO_TARGET_ENV:-}" = "prod" ]; then
     echo ""
-    echo ">>> SKIP_TESTCASES=1 — skipping testcase weightage updater (run_weightage_updater.sh)."
+    echo ">>> DJANGO_TARGET_ENV=prod — skipping evaluation metrics updater (no access in prod)."
     UPDATERS=(
         "run_code_updater.sh"
         "run_hints_updater.sh"
         "run_description_updater.sh"
         "run_metadata_updater.sh"
-        "run_evaluation_metrics_updater.sh"
+        "run_weightage_updater.sh"
         "run_loader.sh"
     )
+fi
+
+if [ "${SKIP_TESTCASES:-0}" = "1" ]; then
+    echo ""
+    echo ">>> SKIP_TESTCASES=1 — skipping testcase weightage updater (run_weightage_updater.sh)."
+    if [ "${DJANGO_TARGET_ENV:-}" = "prod" ]; then
+        UPDATERS=(
+            "run_code_updater.sh"
+            "run_hints_updater.sh"
+            "run_description_updater.sh"
+            "run_metadata_updater.sh"
+            "run_loader.sh"
+        )
+    else
+        UPDATERS=(
+            "run_code_updater.sh"
+            "run_hints_updater.sh"
+            "run_description_updater.sh"
+            "run_metadata_updater.sh"
+            "run_evaluation_metrics_updater.sh"
+            "run_loader.sh"
+        )
+    fi
 fi
 
 echo ""
