@@ -64,6 +64,22 @@
         </header>
 
         <div class="rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:p-5">
+            <div class="mb-4">
+                <span class="text-sm text-slate-300 block mb-2">Django admin environment</span>
+                <div class="flex flex-wrap items-center gap-4">
+                    <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-slate-200">
+                        <input type="radio" name="extractEnv" value="beta" checked
+                            class="accent-cyan-500 w-4 h-4 border-slate-500 bg-slate-800 focus:ring-cyan-500/40">
+                        Beta
+                    </label>
+                    <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-slate-200">
+                        <input type="radio" name="extractEnv" value="prod"
+                            class="accent-cyan-500 w-4 h-4 border-slate-500 bg-slate-800 focus:ring-cyan-500/40">
+                        Prod
+                    </label>
+                </div>
+                <p class="text-xs text-slate-500 mt-2">Extraction runs only against the environment you select (session / credentials from server config).</p>
+            </div>
             <label for="extractJson" class="text-sm text-slate-300 block mb-2">Input JSON</label>
             <textarea id="extractJson" rows="10"
                 class="w-full bg-slate-950/80 text-slate-300 border border-slate-600 rounded-lg p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500/40 resize-y"
@@ -85,7 +101,7 @@
         <div class="mt-6">
             <div class="flex items-center justify-between mb-2 px-1">
                 <span class="text-xs font-medium text-slate-500">Live logs</span>
-                <span class="text-xs text-slate-600">Beta/Prod via your session config</span>
+                <span class="text-xs text-slate-600">Target matches the selector above</span>
             </div>
             <div id="terminal" class="terminal p-4 whitespace-pre-wrap"></div>
         </div>
@@ -100,6 +116,7 @@
 
     <script>
         const runBtn = document.getElementById('runExtractBtn');
+        const extractEnvInputs = () => document.querySelectorAll('input[name="extractEnv"]');
         const editor = document.getElementById('extractJson');
         const terminal = document.getElementById('terminal');
         const statusLine = document.getElementById('statusLine');
@@ -126,6 +143,7 @@
             runBtn.disabled = running;
             runBtn.classList.toggle('opacity-70', running);
             runBtn.classList.toggle('cursor-not-allowed', running);
+            extractEnvInputs().forEach((el) => { el.disabled = running; });
             statusLine.textContent = running ? 'Running…' : 'Idle';
         }
 
@@ -170,10 +188,12 @@
             hasDownloaded = false;
             setRunning(true);
 
+            const djangoTarget = document.querySelector('input[name="extractEnv"]:checked')?.value || 'beta';
+
             fetch('/api/run_extract_coding', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: rawJson })
+                body: JSON.stringify({ content: rawJson, django_target_env: djangoTarget })
             })
                 .then(r => {
                     if (!r.ok) {
@@ -214,7 +234,7 @@
                                 }
                                 if (raw.includes('PIPELINE_EXCEPTION') || raw.includes('>>> FAILED') || raw.includes('>>> ERROR')) logLine(raw, 'err');
                                 else if (raw.includes('PIPELINE_SKIP') || raw.includes('PIPELINE_SUMMARY')) logLine(raw, 'warn');
-                                else if (raw.includes('>>> RUNNING') || raw.includes('>>> SUCCESS') || raw.includes('>>> OUTPUT')) logLine(raw, 'hdr');
+                                else if (raw.includes('>>> TARGET') || raw.includes('>>> RUNNING') || raw.includes('>>> SUCCESS') || raw.includes('>>> OUTPUT')) logLine(raw, 'hdr');
                                 else logLine(raw);
                             }
                             return pump();

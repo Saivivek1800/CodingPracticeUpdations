@@ -546,7 +546,13 @@ def generate_editorial_update(content: str):
     yield "data: >>> DONE\n\n"
 
 
-def generate_extract_coding_json(content: str):
+def generate_extract_coding_json(content: str, django_target_env: str = "beta"):
+    target = (django_target_env or "beta").strip().lower()
+    if target not in ("beta", "prod"):
+        yield f"data: >>> ERROR: django_target_env must be 'beta' or 'prod', got {django_target_env!r}\n\n"
+        yield "data: >>> DONE\n\n"
+        return
+
     try:
         payload = json.loads(content)
         if not isinstance(payload, dict) or not isinstance(payload.get("question_ids"), list) or not payload.get("question_ids"):
@@ -568,7 +574,8 @@ def generate_extract_coding_json(content: str):
     script_path = os.path.join(session_dir, "backend", "scripts", "run_extract_to_coding_json.sh")
     run_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     run_env["NON_INTERACTIVE"] = "1"
-    run_env["DJANGO_TARGET_ENV"] = run_env.get("DJANGO_TARGET_ENV", "beta")
+    run_env["DJANGO_TARGET_ENV"] = target
+    yield f"data: >>> TARGET: {target} (Django admin)\n\n"
     yield "data: >>> RUNNING: run_extract_to_coding_json.sh input_extract_question.json extracted_coding_questions.json coding_questions_output.json\n\n"
     try:
         process = subprocess.Popen(
@@ -589,7 +596,7 @@ def generate_extract_coding_json(content: str):
         )
         if process.stdin:
             try:
-                process.stdin.write("beta\n\n")
+                process.stdin.write(f"{target}\n\n")
                 process.stdin.flush()
                 process.stdin.close()
             except BrokenPipeError:
@@ -709,7 +716,11 @@ def run_extract_coding():
     content = data.get("content")
     if content is None or not str(content).strip():
         return jsonify({"success": False, "message": "Extract input JSON is required."}), 400
-    return Response(generate_extract_coding_json(content), mimetype="text/event-stream")
+    django_target_env = data.get("django_target_env", "beta")
+    return Response(
+        generate_extract_coding_json(content, django_target_env=django_target_env),
+        mimetype="text/event-stream",
+    )
 
 
 @app.route("/health", methods=["GET"])
