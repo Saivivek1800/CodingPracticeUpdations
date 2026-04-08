@@ -23,14 +23,18 @@
             font-size: 14px;
             line-height: 1.45;
             overflow-y: auto;
-            max-height: min(42vh, 340px);
+            max-height: min(48vh, 420px);
             color: #86efac;
+        }
+
+        .sample-panel textarea {
+            font-family: ui-monospace, "Cascadia Code", monospace;
         }
     </style>
 </head>
 
 <body class="px-4 py-10 md:py-14">
-    <main class="mx-auto max-w-4xl">
+    <main class="mx-auto max-w-6xl">
         <div class="mb-8 rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-sm px-4 py-3 md:px-6 md:py-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -63,7 +67,8 @@
             </p>
         </header>
 
-        <div class="rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:p-5">
+        <div class="flex flex-col lg:flex-row lg:items-start gap-6">
+        <div class="flex-1 min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:p-5">
             <div class="mb-4">
                 <span class="text-sm text-slate-300 block mb-2">Django admin environment</span>
                 <div class="flex flex-wrap items-center gap-4">
@@ -81,13 +86,9 @@
                 <p class="text-xs text-slate-500 mt-2">Extraction runs only against the environment you select (session / credentials from server config).</p>
             </div>
             <label for="extractJson" class="text-sm text-slate-300 block mb-2">Input JSON</label>
-            <textarea id="extractJson" rows="10"
+            <textarea id="extractJson" rows="12"
                 class="w-full bg-slate-950/80 text-slate-300 border border-slate-600 rounded-lg p-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500/40 resize-y"
-                placeholder='{
-  "question_ids": [
-    "eda0bece-8569-43fc-9f61-b358823e2977"
-  ]
-}'></textarea>
+                placeholder='Paste { "question_ids": [ "uuid", ... ] } here, or use the sample panel →'></textarea>
 
             <div class="mt-4 flex items-center gap-3">
                 <button id="runExtractBtn"
@@ -96,6 +97,24 @@
                 </button>
                 <span id="statusLine" class="text-xs text-slate-500"></span>
             </div>
+        </div>
+
+        <aside class="sample-panel w-full lg:w-80 shrink-0 rounded-2xl border border-cyan-500/25 bg-cyan-950/20 p-4 md:p-4">
+            <h2 class="text-sm font-semibold text-cyan-200 mb-1">Sample input (copy)</h2>
+            <p class="text-xs text-slate-500 mb-3">Use this shape for batch extract. Copy or paste into the main box.</p>
+            <textarea id="sampleExtractJson" readonly rows="16"
+                class="w-full bg-slate-950/90 text-slate-300 border border-slate-600 rounded-lg p-2 text-[11px] leading-snug focus:outline-none resize-y"></textarea>
+            <div class="mt-3 flex flex-wrap gap-2">
+                <button type="button" id="copySampleBtn"
+                    class="rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-500/25 transition-colors">
+                    Copy sample
+                </button>
+                <button type="button" id="useSampleBtn"
+                    class="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition-colors">
+                    Paste into input
+                </button>
+            </div>
+        </aside>
         </div>
 
         <div class="mt-6">
@@ -115,9 +134,40 @@
     </main>
 
     <script>
+        const SAMPLE_EXTRACT_INPUT = {
+            question_ids: [
+                "423a33e7-44dc-4058-afe8-7510277debc2",
+                "8cad9b0b-1f55-40af-9d4f-1e0814788c45",
+                "bee6f74a-b975-4e49-bc8d-d8afa6f63db0",
+                "9fbbd373-b317-4a84-b112-e02496792eb0",
+                "bb17f40a-c1fc-411f-bfb3-504edf29716e",
+                "1779cd64-03aa-40eb-a4b4-e23de8d50924",
+                "35dfeb1a-19a8-4cbf-8227-208db5dc56a9",
+                "55963131-9cb2-46d8-ab5f-f66e83cec20a",
+                "6831b58c-09ab-4af4-958a-5224d182d1a3"
+            ]
+        };
+
         const runBtn = document.getElementById('runExtractBtn');
         const extractEnvInputs = () => document.querySelectorAll('input[name="extractEnv"]');
         const editor = document.getElementById('extractJson');
+        const sampleTa = document.getElementById('sampleExtractJson');
+        sampleTa.value = JSON.stringify(SAMPLE_EXTRACT_INPUT, null, 2);
+
+        document.getElementById('copySampleBtn').addEventListener('click', async () => {
+            const text = sampleTa.value;
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (e) {
+                sampleTa.select();
+                document.execCommand('copy');
+            }
+            logLine('Sample JSON copied to clipboard.', 'ok');
+        });
+        document.getElementById('useSampleBtn').addEventListener('click', () => {
+            editor.value = sampleTa.value;
+            logLine('Sample pasted into main input.', 'ok');
+        });
         const terminal = document.getElementById('terminal');
         const statusLine = document.getElementById('statusLine');
         const convertedOutput = document.getElementById('convertedJson');
@@ -148,14 +198,17 @@
         }
 
         function logLine(line, cls) {
-            const span = document.createElement('span');
-            if (cls === 'err') span.className = 'text-red-400';
-            else if (cls === 'warn') span.className = 'text-amber-300';
-            else if (cls === 'ok') span.className = 'text-emerald-400';
-            else if (cls === 'hdr') span.className = 'text-cyan-300 font-bold';
-            span.textContent = line;
-            terminal.appendChild(span);
-            terminal.appendChild(document.createElement('br'));
+            const segments = String(line).split('\n');
+            for (let i = 0; i < segments.length; i++) {
+                const span = document.createElement('span');
+                if (cls === 'err') span.className = 'text-red-400';
+                else if (cls === 'warn') span.className = 'text-amber-300';
+                else if (cls === 'ok') span.className = 'text-emerald-400';
+                else if (cls === 'hdr') span.className = 'text-cyan-300 font-bold';
+                span.textContent = segments[i];
+                terminal.appendChild(span);
+                terminal.appendChild(document.createElement('br'));
+            }
             terminal.scrollTop = terminal.scrollHeight;
         }
 
@@ -262,7 +315,8 @@
                             }
                             return;
                         }
-                        if (raw.includes('PIPELINE_EXCEPTION') || raw.includes('>>> FAILED') || raw.includes('>>> ERROR')) logLine(raw, 'err');
+                        if (raw.includes('RuntimeError:') || raw.includes('Traceback (most recent call last)')) logLine(raw, 'err');
+                        else if (raw.includes('PIPELINE_EXCEPTION') || raw.includes('>>> FAILED') || raw.includes('>>> ERROR')) logLine(raw, 'err');
                         else if (raw.includes('PIPELINE_SKIP') || raw.includes('PIPELINE_SUMMARY')) logLine(raw, 'warn');
                         else if (raw.includes('>>> TARGET') || raw.includes('>>> RUNNING') || raw.includes('>>> SUCCESS') || raw.includes('>>> OUTPUT')) logLine(raw, 'hdr');
                         else logLine(raw);

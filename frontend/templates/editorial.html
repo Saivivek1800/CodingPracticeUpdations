@@ -62,20 +62,9 @@
             </p>
         </header>
 
-        <div class="mb-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
-            <span class="text-sm text-slate-300 block mb-2">Django admin target</span>
-            <div class="flex flex-wrap items-center gap-4">
-                <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-slate-200">
-                    <input type="radio" name="editorialEnv" value="beta" checked
-                        class="accent-cyan-500 w-4 h-4 border-slate-500 bg-slate-800 focus:ring-cyan-500/40">
-                    Beta
-                </label>
-                <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-slate-200">
-                    <input type="radio" name="editorialEnv" value="prod"
-                        class="accent-cyan-500 w-4 h-4 border-slate-500 bg-slate-800 focus:ring-cyan-500/40">
-                    Prod
-                </label>
-            </div>
+        <div class="mb-4 rounded-xl border border-cyan-500/25 bg-cyan-950/20 px-4 py-3">
+            <span class="text-sm font-medium text-cyan-200">Django admin: Beta only</span>
+            <p class="text-xs text-slate-500 mt-1">Editorial updates are not run against Prod from this tool.</p>
         </div>
 
         <div class="rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:p-5">
@@ -98,7 +87,7 @@
         <div class="mt-6">
             <div class="flex items-center justify-between mb-2 px-1">
                 <span class="text-xs font-medium text-slate-500">Live logs</span>
-                <span class="text-xs text-slate-600">Target = radio above</span>
+                <span class="text-xs text-slate-600">Target = Beta</span>
             </div>
             <div id="terminal" class="terminal p-4 whitespace-pre-wrap"></div>
         </div>
@@ -110,15 +99,10 @@
         const terminal = document.getElementById('terminal');
         const statusLine = document.getElementById('statusLine');
 
-        function editorialEnvInputs() {
-            return document.querySelectorAll('input[name="editorialEnv"]');
-        }
-
         function setRunning(running) {
             runBtn.disabled = running;
             runBtn.classList.toggle('opacity-70', running);
             runBtn.classList.toggle('cursor-not-allowed', running);
-            editorialEnvInputs().forEach((el) => { el.disabled = running; });
             statusLine.textContent = running ? 'Running…' : 'Idle';
         }
 
@@ -158,12 +142,10 @@
             terminal.textContent = '';
             setRunning(true);
 
-            const djangoTarget = document.querySelector('input[name="editorialEnv"]:checked')?.value || 'beta';
-
             fetch('/api/run_editorial_update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: rawJson, django_target_env: djangoTarget })
+                body: JSON.stringify({ content: rawJson })
             })
                 .then(r => {
                     if (!r.ok) {

@@ -620,8 +620,9 @@ def generate_testcases_only(content: str, django_target_env=None):
     yield "data: >>> DONE\n\n"
 
 
-def generate_editorial_update(content: str, django_target_env=None):
-    tgt = _normalize_django_target_env(django_target_env)
+def generate_editorial_update(content: str):
+    # Editorial by question id is supported on Beta only.
+    tgt = _normalize_django_target_env("beta")
     try:
         json.loads(content)
         session_id = f"editorial_{uuid.uuid4().hex}"
@@ -890,8 +891,7 @@ def run_editorial_update():
     content = data.get("content")
     if content is None or not str(content).strip():
         return jsonify({"success": False, "message": "Editorial JSON is required."}), 400
-    tgt = data.get("django_target_env")
-    return Response(generate_editorial_update(content, django_target_env=tgt), mimetype="text/event-stream")
+    return Response(generate_editorial_update(content), mimetype="text/event-stream")
 
 
 @app.route("/api/run_extract_coding", methods=["POST"])

@@ -54,6 +54,165 @@ def _page_looks_logged_in(page) -> bool:
     return "Log out" in body or "Logout" in body
 
 
+def _looks_like_http_url(s: str) -> bool:
+    t = (s or "").strip()
+    return t.startswith("http://") or t.startswith("https://")
+
+
+def _is_fetched_error_body(text: str) -> bool:
+    """True when text is clearly a traceback / exception dump (not another JSON wrapper with URLs)."""
+    t = text.lstrip()
+    if not t:
+        return False
+    if t.startswith("{") or t.startswith("["):
+        return False
+    lowered = t.lower()
+    return (
+        "traceback (most recent call last)" in lowered
+        or lowered.startswith("exception ")
+        or "invalid_question_ids" in lowered
+        or "invalidinputdataexception" in lowered
+        or "\n  file \"" in lowered
+    )
+
+
+def _http_get_text(url: str) -> str:
+    r = requests.get(url.strip(), timeout=120)
+    r.raise_for_status()
+    return (r.text or "").strip()
+
+
+def _find_task_output_download_url(data: dict) -> str | None:
+    """
+    Admin often stores only a JSON wrapper; the real log/error is at a URL.
+
+    Mirrors extract_coding_questions.py: on FAILURE, output may be
+    {\"exception\": \"https://...\"} (signed URL to the real body).
+    """
+    # Order matters: 'exception' is commonly the error artifact URL on failure.
+    direct_keys = (
+        "exception",
+        "traceback_url",
+        "error_url",
+        "task_output_url",
+        "output_url",
+        "result_url",
+        "failure_output_url",
+        "log_url",
+        "details_url",
+        "input_questions_json_s3_url",
+        "url",
+    )
+    for k in direct_keys:
+        v = data.get(k)
+        if isinstance(v, str) and _looks_like_http_url(v):
+            return v.strip()
+    for nest in ("response", "output", "result", "data", "error"):
+        sub = data.get(nest)
+        if isinstance(sub, dict):
+            inner = _find_task_output_download_url(sub)
+            if inner:
+                return inner
+        if isinstance(sub, str) and _looks_like_http_url(sub):
+            return sub.strip()
+    return None
+
+
+def _resolve_task_output_to_text(task_output_text: str, max_hops: int = 5) -> str:
+    """
+    Follow bare URLs or JSON fields that point to URLs until we get real text/JSON content.
+    Stops when the body looks like an exception/traceback or is JSON without a download URL.
+    """
+    raw = (task_output_text or "").strip()
+    last_error: str | None = None
+    for _ in range(max_hops):
+        if not raw:
+            break
+        if _is_fetched_error_body(raw):
+            break
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            url = _find_task_output_download_url(data)
+            if url:
+                try:
+                    raw = _http_get_text(url)
+                    continue
+                except Exception as e:
+                    last_error = f"(Failed to download task output from URL: {e})"
+                    try:
+                        raw = json.dumps(data, indent=2, ensure_ascii=False)
+                    except TypeError:
+                        raw = str(data)
+                    break
+            break
+        if _looks_like_http_url(raw) and "\n" not in raw:
+            try:
+                raw = _http_get_text(raw)
+                continue
+            except Exception as e:
+                return f"(Failed to download task output from URL: {e})\nURL was:\n{raw}"[:12000]
+        break
+    if last_error and raw:
+        return f"{last_error}\n\n{raw}"
+    if last_error:
+        return last_error
+    return raw
+
+
+def _extract_failure_detail(task_output_text: str) -> str:
+    """Best-effort parse of admin task output JSON/text so users see the real error."""
+    raw = (task_output_text or "").strip()
+    if not raw:
+        return "(No error text was returned in the task output field — the failure reason is unavailable in this run.)"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw if len(raw) <= 12000 else raw[:12000] + "\n… (truncated)"
+
+    if not isinstance(data, dict):
+        return raw if len(raw) <= 12000 else raw[:12000] + "\n… (truncated)"
+
+    chunks: list[str] = []
+    inv = data.get("invalid_question_ids")
+    if inv is not None:
+        try:
+            pretty_inv = json.dumps(inv, indent=2, ensure_ascii=False)
+        except TypeError:
+            pretty_inv = str(inv)
+        chunks.append(f"invalid_question_ids:\n{pretty_inv}")
+    for key in ("error", "exception", "message", "detail", "reason", "traceback", "stack_trace"):
+        val = data.get(key)
+        if val is not None and str(val).strip():
+            if isinstance(val, str) and _looks_like_http_url(val) and key == "exception":
+                continue
+            chunks.append(f"{key}:\n{val}")
+
+    for nest_name in ("response", "output", "result", "data"):
+        sub = data.get(nest_name)
+        if isinstance(sub, dict):
+            for key in ("error", "exception", "message", "detail", "traceback"):
+                val = sub.get(key)
+                if val is not None and str(val).strip():
+                    if isinstance(val, str) and _looks_like_http_url(val) and key == "exception":
+                        continue
+                    chunks.append(f"{nest_name}.{key}:\n{val}")
+        elif isinstance(sub, str) and sub.strip():
+            chunks.append(f"{nest_name}:\n{sub.strip()}")
+
+    if chunks:
+        return "\n\n".join(chunks)
+
+    # Fallback: pretty-print whole object (often includes nested error)
+    try:
+        pretty = json.dumps(data, indent=2, ensure_ascii=False)
+    except TypeError:
+        pretty = str(data)
+    return pretty if len(pretty) <= 12000 else pretty[:12000] + "\n… (truncated)"
+
+
 def _extract_s3_url(task_output_text: str) -> str | None:
     data = json.loads(task_output_text)
     if isinstance(data, dict):
@@ -110,7 +269,7 @@ def run(input_file: str, raw_output_file: str, converted_output_file: str) -> No
         page.click("input[name='_continue']")
         page.wait_for_load_state("networkidle")
 
-        print(f"Tracking task: {page.url}")
+        print("Tracking extract task in admin (polling status; URL omitted for users without admin access).")
         status_selector = ".field-task_status .readonly"
         output_selector = ".field-task_output_url .readonly"
 
@@ -137,7 +296,16 @@ def run(input_file: str, raw_output_file: str, converted_output_file: str) -> No
                 success_without_url = True
                 break
             if status == "FAILURE":
-                raise RuntimeError("Content loading task failed. Check task output in admin.")
+                task_out = page.inner_text(output_selector).strip() if page.is_visible(output_selector) else ""
+                resolved_out = _resolve_task_output_to_text(task_out)
+                detail = _extract_failure_detail(resolved_out)
+                raise RuntimeError(
+                    "Content loading task finished with status FAILURE.\n"
+                    "Parsed error from the admin task output field (Exception / traceback when the backend provides it):\n"
+                    "----------\n"
+                    f"{detail}\n"
+                    "----------"
+                )
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
