@@ -7,13 +7,36 @@ import glob
 import queue
 import time
 import uuid
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, send_file
 
 # Paths for scripts (project root two levels above this file)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 TEMPLATES_DIR = os.path.join(FRONTEND_DIR, "templates")
+
+
+def _normalize_django_target_env(value, default="beta"):
+    t = (default if value is None else str(value)).strip().lower()
+    return t if t in ("beta", "prod") else default
+
+
+_EXTRACT_SESSION_ID_RE = re.compile(r"^extract_[0-9a-f]{32}$")
+
+
+def _resolve_extract_coding_output_path(session_id: str) -> str | None:
+    """Return path to coding_questions_output.json for a valid extract_* session, or None."""
+    if not session_id or not _EXTRACT_SESSION_ID_RE.fullmatch(session_id):
+        return None
+    session_dir = os.path.join(SESSIONS_DIR, session_id)
+    out_path = os.path.join(session_dir, "coding_questions_output.json")
+    real_sessions = os.path.realpath(SESSIONS_DIR)
+    real_out = os.path.realpath(out_path)
+    if not real_out.startswith(real_sessions + os.sep):
+        return None
+    if not os.path.isfile(real_out):
+        return None
+    return real_out
 
 
 def _env_truthy(name: str, default: bool = False) -> bool:
@@ -62,6 +85,144 @@ PIPELINE_LOCK = threading.Lock()
 # Background threads that run full-pipeline jobs from /api/run_everything (queued).
 # Unrelated to Gunicorn/HTTP workers; raise for more parallel pipeline runs on one machine.
 PIPELINE_WORKERS = max(1, int(os.environ.get("PIPELINE_WORKERS", "5")))
+
+
+def _parse_secrets_env_line(line: str):
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+    if line.startswith("export "):
+        line = line[7:].strip()
+    if "=" not in line:
+        return None
+    key, _, value = line.partition("=")
+    key = key.strip()
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return key, value
+
+
+def _merge_project_secrets_env_into(env: dict) -> None:
+    """Load BETA_/PROD_/DJANGO_* from project .secrets.env when the server process never sourced it."""
+    path = os.path.join(BASE_DIR, ".secrets.env")
+    if not os.path.isfile(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                parsed = _parse_secrets_env_line(line)
+                if not parsed:
+                    continue
+                k, v = parsed
+                if k not in ("SECRETS_DECRYPTION_KEY", "SECRETS_DECRYPTION_KEY_FILE") and not (
+                    k.startswith("BETA_DJANGO_")
+                    or k.startswith("PROD_DJANGO_")
+                    or k.startswith("DJANGO_EVAL_")
+                ):
+                    continue
+                if not str(env.get(k, "")).strip():
+                    env[k] = v
+    except OSError:
+        pass
+
+
+def _inject_secrets_decryption_key(env: dict) -> None:
+    """Ensure SECRETS_DECRYPTION_KEY is set for NON_INTERACTIVE .secrets.enc decrypt (UI cwd is sessions/*)."""
+    if str(env.get("SECRETS_DECRYPTION_KEY", "")).strip():
+        return
+    key_file = (env.get("SECRETS_DECRYPTION_KEY_FILE") or "").strip()
+    if key_file and os.path.isfile(key_file):
+        try:
+            with open(key_file, "r", encoding="utf-8") as f:
+                env["SECRETS_DECRYPTION_KEY"] = f.read().strip()
+        except OSError:
+            pass
+    if str(env.get("SECRETS_DECRYPTION_KEY", "")).strip():
+        return
+    root_key = os.path.join(BASE_DIR, ".secrets.key")
+    if os.path.isfile(root_key):
+        try:
+            with open(root_key, "r", encoding="utf-8") as f:
+                env["SECRETS_DECRYPTION_KEY"] = f.read().strip()
+        except OSError:
+            pass
+
+
+def _decrypt_secrets_enc_into_env(env: dict) -> None:
+    """If creds for the target env are still missing, decrypt project .secrets.enc with SECRETS_DECRYPTION_KEY (same as lib_django_session.sh)."""
+    t = (env.get("DJANGO_TARGET_ENV") or "beta").strip().lower()
+    if t == "prod":
+        u = str(env.get("PROD_DJANGO_ADMIN_USERNAME", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
+        p = str(env.get("PROD_DJANGO_ADMIN_PASSWORD", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
+    else:
+        u = str(env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
+        p = str(env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
+    if u and p:
+        return
+    key = str(env.get("SECRETS_DECRYPTION_KEY", "")).strip()
+    if not key:
+        return
+    enc_path = os.path.join(BASE_DIR, ".secrets.enc")
+    if not os.path.isfile(enc_path):
+        return
+    try:
+        proc = subprocess.run(
+            [
+                "openssl",
+                "enc",
+                "-aes-256-cbc",
+                "-d",
+                "-pbkdf2",
+                "-in",
+                enc_path,
+                "-pass",
+                f"pass:{key}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if proc.returncode != 0:
+            return
+        for line in proc.stdout.splitlines():
+            parsed = _parse_secrets_env_line(line)
+            if not parsed:
+                continue
+            k, v = parsed
+            if k.startswith("BETA_DJANGO_") or k.startswith("PROD_DJANGO_") or k.startswith("DJANGO_EVAL_"):
+                if not str(env.get(k, "")).strip():
+                    env[k] = v
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+
+
+def _sync_django_admin_login_env(env: dict) -> None:
+    """Copy BETA_/PROD_* into DJANGO_ADMIN_* for Playwright (must match target env)."""
+    t = (env.get("DJANGO_TARGET_ENV") or "beta").strip().lower()
+    if t == "prod":
+        u = str(env.get("PROD_DJANGO_ADMIN_USERNAME", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
+        p = str(env.get("PROD_DJANGO_ADMIN_PASSWORD", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
+        url = str(env.get("PROD_DJANGO_ADMIN_URL", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_URL", "")).strip()
+    else:
+        u = str(env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
+        p = str(env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
+        url = str(env.get("BETA_DJANGO_ADMIN_URL", "")).strip()
+    if u:
+        env["DJANGO_ADMIN_USERNAME"] = u
+    if p:
+        env["DJANGO_ADMIN_PASSWORD"] = p
+    if url:
+        env["DJANGO_ADMIN_URL"] = url
+
+
+def _prepare_django_child_env(run_env: dict) -> None:
+    """Load project .secrets.env / .secrets.key / .secrets.enc into env for pipeline and updaters (Flask often never sourced .secrets.env)."""
+    run_env.setdefault("DJANGO_TARGET_ENV", "beta")
+    _merge_project_secrets_env_into(run_env)
+    _inject_secrets_decryption_key(run_env)
+    _decrypt_secrets_enc_into_env(run_env)
+    _sync_django_admin_login_env(run_env)
 
 
 def _sanitize_log_line(line: str) -> str:
@@ -116,9 +277,15 @@ def _pipeline_worker():
         session_dir = payload["session_dir"]
         skip_jupyter = payload["skip_jupyter"]
         skip_testcases = payload.get("skip_testcases", False)
+        django_target_env = _normalize_django_target_env(payload.get("django_target_env"))
         try:
             _job_update(job_id, status="running", started_at=time.time())
             _job_append(job_id, ">>> QUEUE: job started")
+            _job_append(
+                job_id,
+                f">>> NOTE: DJANGO_TARGET_ENV={django_target_env} — "
+                "failed steps are skipped so remaining steps still run.",
+            )
             script_path = os.path.join(session_dir, "run_full_pipeline.sh")
             if not os.path.isfile(script_path):
                 _job_append(job_id, ">>> ERROR: run_full_pipeline.sh not found in session.")
@@ -128,7 +295,8 @@ def _pipeline_worker():
             run_env = os.environ.copy()
             run_env["PYTHONUNBUFFERED"] = "1"
             run_env["NON_INTERACTIVE"] = "1"
-            run_env["DJANGO_TARGET_ENV"] = run_env.get("DJANGO_TARGET_ENV", "beta")
+            run_env["DJANGO_TARGET_ENV"] = django_target_env
+            _prepare_django_child_env(run_env)
             if skip_jupyter:
                 run_env["SKIP_JUPYTER"] = "1"
                 _job_append(job_id, ">>> NOTE: SKIP_JUPYTER=1 enabled for this job.")
@@ -164,7 +332,7 @@ def _pipeline_worker():
             PIPELINE_QUEUE.task_done()
 
 
-def _create_pipeline_job(session_dir, skip_jupyter, skip_testcases=False):
+def _create_pipeline_job(session_dir, skip_jupyter, skip_testcases=False, django_target_env="beta"):
     job_id = uuid.uuid4().hex
     log_file = os.path.join(session_dir, f"{job_id}.log")
     with PIPELINE_LOCK:
@@ -185,6 +353,7 @@ def _create_pipeline_job(session_dir, skip_jupyter, skip_testcases=False):
             "session_dir": session_dir,
             "skip_jupyter": skip_jupyter,
             "skip_testcases": skip_testcases,
+            "django_target_env": _normalize_django_target_env(django_target_env),
         }
     )
     pos = _queue_position(job_id)
@@ -270,6 +439,7 @@ def init_session(session_id):
         "lib_pipeline_exception.sh",
         "backend",
         ".secrets.env",
+        ".secrets.key",
     ):
         src = os.path.join(BASE_DIR, extra)
         dest = os.path.join(session_dir, extra)
@@ -308,7 +478,7 @@ def save_json():
         return jsonify({"success": False, "message": f"Error saving file: {e}"})
 
 
-def generate_output(scripts, session_id, is_bash=False):
+def generate_output(scripts, session_id, is_bash=False, django_target_env=None):
     try:
         session_dir = init_session(session_id)
     except Exception as e:
@@ -316,13 +486,15 @@ def generate_output(scripts, session_id, is_bash=False):
         yield "data: >>> DONE\n\n"
         return
 
+    tgt = _normalize_django_target_env(django_target_env)
     for script in scripts:
         yield f"data: >>> RUNNING: {script}\n\n"
         try:
             script_path = os.path.join(session_dir, script)
             run_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
             run_env["NON_INTERACTIVE"] = "1"
-            run_env["DJANGO_TARGET_ENV"] = run_env.get("DJANGO_TARGET_ENV", "beta")
+            run_env["DJANGO_TARGET_ENV"] = tgt
+            _prepare_django_child_env(run_env)
             if is_bash:
                 process = subprocess.Popen(
                     ["/bin/bash", script_path],
@@ -336,7 +508,7 @@ def generate_output(scripts, session_id, is_bash=False):
                 )
                 if process.stdin:
                     try:
-                        process.stdin.write("beta\n\n")
+                        process.stdin.write(f"{tgt}\n\n")
                         process.stdin.flush()
                         process.stdin.close()
                     except BrokenPipeError:
@@ -368,7 +540,7 @@ def generate_output(scripts, session_id, is_bash=False):
     yield "data: >>> DONE\n\n"
 
 
-def generate_testcases_only(content: str):
+def generate_testcases_only(content: str, django_target_env=None):
     try:
         json.loads(content)
         session_id = f"job_{uuid.uuid4().hex}"
@@ -385,6 +557,7 @@ def generate_testcases_only(content: str):
         yield "data: >>> DONE\n\n"
         return
 
+    tgt = _normalize_django_target_env(django_target_env)
     steps = [
         {"name": "generate_input_data.py", "kind": "py"},
         {"name": "run_loader.sh", "kind": "bash"},
@@ -398,7 +571,8 @@ def generate_testcases_only(content: str):
             script_path = os.path.join(session_dir, script)
             run_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
             run_env["NON_INTERACTIVE"] = "1"
-            run_env["DJANGO_TARGET_ENV"] = run_env.get("DJANGO_TARGET_ENV", "beta")
+            run_env["DJANGO_TARGET_ENV"] = tgt
+            _prepare_django_child_env(run_env)
             if kind == "bash":
                 process = subprocess.Popen(
                     ["/bin/bash", script_path],
@@ -412,7 +586,7 @@ def generate_testcases_only(content: str):
                 )
                 if process.stdin:
                     try:
-                        process.stdin.write("beta\n\n")
+                        process.stdin.write(f"{tgt}\n\n")
                         process.stdin.flush()
                         process.stdin.close()
                     except BrokenPipeError:
@@ -446,7 +620,8 @@ def generate_testcases_only(content: str):
     yield "data: >>> DONE\n\n"
 
 
-def generate_editorial_update(content: str):
+def generate_editorial_update(content: str, django_target_env=None):
+    tgt = _normalize_django_target_env(django_target_env)
     try:
         json.loads(content)
         session_id = f"editorial_{uuid.uuid4().hex}"
@@ -466,7 +641,9 @@ def generate_editorial_update(content: str):
     script_path = os.path.join(session_dir, "backend", "scripts", "run_editorial_by_question_id.sh")
     run_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     run_env["NON_INTERACTIVE"] = "1"
-    run_env["DJANGO_TARGET_ENV"] = run_env.get("DJANGO_TARGET_ENV", "beta")
+    run_env["DJANGO_TARGET_ENV"] = tgt
+    _prepare_django_child_env(run_env)
+    yield f"data: >>> TARGET: {tgt} (Django admin)\n\n"
     yield "data: >>> RUNNING: run_editorial_by_question_id.sh input_editorial_by_question_id.json\n\n"
     current_qid = None
     updated_qids = []
@@ -491,7 +668,7 @@ def generate_editorial_update(content: str):
         )
         if process.stdin:
             try:
-                process.stdin.write("beta\n\n")
+                process.stdin.write(f"{tgt}\n\n")
                 process.stdin.flush()
                 process.stdin.close()
             except BrokenPipeError:
@@ -575,6 +752,7 @@ def generate_extract_coding_json(content: str, django_target_env: str = "beta"):
     run_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     run_env["NON_INTERACTIVE"] = "1"
     run_env["DJANGO_TARGET_ENV"] = target
+    _prepare_django_child_env(run_env)
     yield f"data: >>> TARGET: {target} (Django admin)\n\n"
     yield "data: >>> RUNNING: run_extract_to_coding_json.sh input_extract_question.json extracted_coding_questions.json coding_questions_output.json\n\n"
     try:
@@ -615,11 +793,12 @@ def generate_extract_coding_json(content: str, django_target_env: str = "beta"):
             yield f"data: >>> RAW_OUTPUT: {raw_path}\n\n"
             try:
                 with open(out_path, "r", encoding="utf-8") as f:
-                    converted_obj = json.load(f)
-                converted_compact = json.dumps(converted_obj, separators=(",", ":"), ensure_ascii=False)
-                yield f"data: >>> CONVERTED_JSON: {converted_compact}\n\n"
+                    json.load(f)
+                yield f"data: >>> CONVERTED_SESSION: {session_id}\n\n"
+            except json.JSONDecodeError as e:
+                yield f"data: >>> WARN: converted output is not valid JSON: {e}\n\n"
             except Exception as e:
-                yield f"data: >>> WARN: could not stream converted JSON content: {e}\n\n"
+                yield f"data: >>> WARN: could not read converted JSON for download: {e}\n\n"
     except Exception as e:
         yield f"data: >>> ERROR: Exception while running extract-to-coding pipeline: {e}\n\n"
     yield "data: >>> DONE\n\n"
@@ -627,16 +806,17 @@ def generate_extract_coding_json(content: str, django_target_env: str = "beta"):
 
 @app.route("/api/run_format", methods=["POST"])
 def run_format():
-    data = request.json
+    data = request.json or {}
     session_id = data.get("session_id", "")
     if not session_id:
         return jsonify({"success": False, "message": "Missing session_id"}), 400
-    return Response(generate_output(FORMAT_SCRIPTS, session_id, is_bash=False), mimetype="text/event-stream")
+    tgt = data.get("django_target_env")
+    return Response(generate_output(FORMAT_SCRIPTS, session_id, is_bash=False, django_target_env=tgt), mimetype="text/event-stream")
 
 
 @app.route("/api/run_updater", methods=["POST"])
 def run_updater():
-    data = request.json
+    data = request.json or {}
     action = data.get("action")
     session_id = data.get("session_id", "")
     if not session_id:
@@ -649,7 +829,8 @@ def run_updater():
     else:
         return jsonify({"success": False, "message": "Unknown action."}), 400
 
-    return Response(generate_output(scripts_to_run, session_id, is_bash=True), mimetype="text/event-stream")
+    tgt = data.get("django_target_env")
+    return Response(generate_output(scripts_to_run, session_id, is_bash=True, django_target_env=tgt), mimetype="text/event-stream")
 
 
 @app.route("/api/run_everything", methods=["POST"])
@@ -678,7 +859,8 @@ def run_everything():
 
     skip_jupyter = bool(data.get("skip_jupyter"))
     skip_testcases = bool(data.get("skip_testcases"))
-    job_id = _create_pipeline_job(session_dir, skip_jupyter, skip_testcases)
+    django_target_env = _normalize_django_target_env(data.get("django_target_env"))
+    job_id = _create_pipeline_job(session_dir, skip_jupyter, skip_testcases, django_target_env=django_target_env)
     return Response(_stream_job_logs(job_id), mimetype="text/event-stream")
 
 
@@ -688,7 +870,8 @@ def run_testcases_only():
     content = data.get("content")
     if content is None or not str(content).strip():
         return jsonify({"success": False, "message": "input.json is required."}), 400
-    return Response(generate_testcases_only(content), mimetype="text/event-stream")
+    tgt = data.get("django_target_env")
+    return Response(generate_testcases_only(content, django_target_env=tgt), mimetype="text/event-stream")
 
 
 @app.route("/editorial")
@@ -707,7 +890,8 @@ def run_editorial_update():
     content = data.get("content")
     if content is None or not str(content).strip():
         return jsonify({"success": False, "message": "Editorial JSON is required."}), 400
-    return Response(generate_editorial_update(content), mimetype="text/event-stream")
+    tgt = data.get("django_target_env")
+    return Response(generate_editorial_update(content, django_target_env=tgt), mimetype="text/event-stream")
 
 
 @app.route("/api/run_extract_coding", methods=["POST"])
@@ -723,6 +907,20 @@ def run_extract_coding():
     )
 
 
+@app.route("/api/extract_coding_result/<session_id>", methods=["GET"])
+def extract_coding_result(session_id):
+    """Serve full converted JSON (avoids megabyte lines in SSE)."""
+    path = _resolve_extract_coding_output_path(session_id)
+    if not path:
+        return jsonify({"success": False, "message": "Not found or invalid session."}), 404
+    return send_file(
+        path,
+        mimetype="application/json",
+        as_attachment=True,
+        download_name="coding_questions_output.json",
+    )
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify(
@@ -731,6 +929,12 @@ def health():
             "status": "healthy",
             "pipeline_workers": PIPELINE_WORKERS,
             "queue_depth": PIPELINE_QUEUE.qsize(),
+            "django_secrets_files": {
+                "project_root": BASE_DIR,
+                "has_dot_secrets_env": os.path.isfile(os.path.join(BASE_DIR, ".secrets.env")),
+                "has_dot_secrets_key": os.path.isfile(os.path.join(BASE_DIR, ".secrets.key")),
+                "has_dot_secrets_enc": os.path.isfile(os.path.join(BASE_DIR, ".secrets.enc")),
+            },
         }
     ), 200
 

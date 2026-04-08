@@ -30,6 +30,30 @@ def _max_wait_seconds_for_payload(payload: dict) -> int:
     return max(1800, 900 + n * 300)
 
 
+def _page_looks_logged_in(page) -> bool:
+    """Detect Django admin session without relying on full HTML (faster, fewer false negatives)."""
+    try:
+        u = (page.url or "").lower()
+        if "/admin/login" in u or u.rstrip("/").endswith("/login"):
+            return False
+    except Exception:
+        pass
+    try:
+        loc = page.locator("a[href*='logout']")
+        if loc.count() > 0:
+            try:
+                return loc.first.is_visible(timeout=5000)
+            except Exception:
+                return True
+    except Exception:
+        pass
+    try:
+        body = page.content()
+    except Exception:
+        body = ""
+    return "Log out" in body or "Logout" in body
+
+
 def _extract_s3_url(task_output_text: str) -> str | None:
     data = json.loads(task_output_text)
     if isinstance(data, dict):
@@ -54,8 +78,12 @@ def run(input_file: str, raw_output_file: str, converted_output_file: str) -> No
         page = context.new_page()
 
         goto_or_fail(page, ADMIN_URL, script="extract_and_convert_coding_question.py")
+        try:
+            page.wait_for_load_state("networkidle", timeout=90000)
+        except Exception:
+            pass
 
-        if "Log out" not in page.content():
+        if not _page_looks_logged_in(page):
             if USERNAME and PASSWORD:
                 page.fill("#id_username", USERNAME)
                 page.fill("#id_password", PASSWORD)
@@ -63,7 +91,16 @@ def run(input_file: str, raw_output_file: str, converted_output_file: str) -> No
                 page.wait_for_load_state("networkidle")
                 context.storage_state(path=SESSION_FILE)
             else:
-                raise RuntimeError("Not logged in and no DJANGO_ADMIN_USERNAME/DJANGO_ADMIN_PASSWORD provided.")
+                _env_hint = os.environ.get("DJANGO_TARGET_ENV") or (
+                    "prod" if "prod" in os.path.basename(SESSION_FILE).lower() else "beta"
+                )
+                raise RuntimeError(
+                    "Django admin session is missing or expired, and no username/password were loaded for re-login. "
+                    f"Target from session file: {_env_hint}. "
+                    "Add BETA_DJANGO_ADMIN_USERNAME/PASSWORD (and PROD_* for prod) to .secrets.env, "
+                    "or set SECRETS_DECRYPTION_KEY so .secrets.enc decrypts in NON_INTERACTIVE mode. "
+                    f"You can delete {SESSION_FILE} after fixing credentials, then run again to save a new session."
+                )
 
         print("Creating content loading task...")
         page.goto(CONTENT_LOADING_URL)

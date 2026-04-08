@@ -9,7 +9,9 @@ import os
 
 bind = os.environ.get("BIND", "0.0.0.0:5000")
 workers = int(os.environ.get("GUNICORN_WORKERS", "1"))
-threads = int(os.environ.get("GUNICORN_THREADS", "16"))
+# Each open SSE stream (e.g. pipeline logs) holds a worker thread until the job ends.
+# Default 16 was too low — exhausted pool looks like "blank page / loading forever" on / and /health.
+threads = int(os.environ.get("GUNICORN_THREADS", "64"))
 worker_class = "gthread"
 timeout = int(os.environ.get("GUNICORN_TIMEOUT", "0"))
 graceful_timeout = int(os.environ.get("GUNICORN_GRACEFUL_TIMEOUT", "120"))

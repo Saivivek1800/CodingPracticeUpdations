@@ -1,20 +1,57 @@
 # Shared Django admin env: session-first, then .secrets.env, then optional .secrets.enc
 # Source from project root: source "$(dirname "$0")/lib_django_session.sh" (after cd to project root)
 
-BETA_ADMIN_URL="${BETA_DJANGO_ADMIN_URL:-https://nkb-backend-ccbp-beta.earlywave.in/admin/}"
-PROD_ADMIN_URL="${PROD_DJANGO_ADMIN_URL:-https://nkb-backend-ccbp-prod-apis.ccbp.in/admin/}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
+
+# Parent (e.g. Flask) may set DJANGO_ADMIN_* before sourcing; do not let empty W_* wipe them.
+_IN_DJU="${DJANGO_ADMIN_USERNAME:-}"
+_IN_DJP="${DJANGO_ADMIN_PASSWORD:-}"
+_IN_DJL="${DJANGO_ADMIN_URL:-}"
+
+# Parent (e.g. Flask) may pass BETA_* / SECRETS_DECRYPTION_KEY in the environment. Sourcing .secrets.env
+# with empty lines like BETA_DJANGO_ADMIN_USERNAME= would wipe those — preserve and merge back.
+_IN_BU="${BETA_DJANGO_ADMIN_USERNAME:-}"
+_IN_BP="${BETA_DJANGO_ADMIN_PASSWORD:-}"
+_IN_BL="${BETA_DJANGO_ADMIN_URL:-}"
+_IN_PU="${PROD_DJANGO_ADMIN_USERNAME:-}"
+_IN_PP="${PROD_DJANGO_ADMIN_PASSWORD:-}"
+_IN_PL="${PROD_DJANGO_ADMIN_URL:-}"
+_IN_SK="${SECRETS_DECRYPTION_KEY:-}"
+_IN_SKF="${SECRETS_DECRYPTION_KEY_FILE:-}"
 
 if [ -f ".secrets.env" ]; then
     set -a
     source .secrets.env 2>/dev/null
     set +a
-    BETA_W_U="${BETA_DJANGO_ADMIN_USERNAME:-}"
-    BETA_W_P="${BETA_DJANGO_ADMIN_PASSWORD:-}"
-    BETA_W_L="${BETA_DJANGO_ADMIN_URL:-}"
-    PROD_W_U="${PROD_DJANGO_ADMIN_USERNAME:-}"
-    PROD_W_P="${PROD_DJANGO_ADMIN_PASSWORD:-}"
-    PROD_W_L="${PROD_DJANGO_ADMIN_URL:-}"
+fi
+export BETA_DJANGO_ADMIN_USERNAME="${BETA_DJANGO_ADMIN_USERNAME:-$_IN_BU}"
+export BETA_DJANGO_ADMIN_PASSWORD="${BETA_DJANGO_ADMIN_PASSWORD:-$_IN_BP}"
+export BETA_DJANGO_ADMIN_URL="${BETA_DJANGO_ADMIN_URL:-$_IN_BL}"
+export PROD_DJANGO_ADMIN_USERNAME="${PROD_DJANGO_ADMIN_USERNAME:-$_IN_PU}"
+export PROD_DJANGO_ADMIN_PASSWORD="${PROD_DJANGO_ADMIN_PASSWORD:-$_IN_PP}"
+export PROD_DJANGO_ADMIN_URL="${PROD_DJANGO_ADMIN_URL:-$_IN_PL}"
+export SECRETS_DECRYPTION_KEY="${SECRETS_DECRYPTION_KEY:-$_IN_SK}"
+export SECRETS_DECRYPTION_KEY_FILE="${SECRETS_DECRYPTION_KEY_FILE:-$_IN_SKF}"
+
+BETA_ADMIN_URL="${BETA_DJANGO_ADMIN_URL:-https://nkb-backend-ccbp-beta.earlywave.in/admin/}"
+PROD_ADMIN_URL="${PROD_DJANGO_ADMIN_URL:-https://nkb-backend-ccbp-prod-apis.ccbp.in/admin/}"
+
+BETA_W_U="${BETA_DJANGO_ADMIN_USERNAME:-}"
+BETA_W_P="${BETA_DJANGO_ADMIN_PASSWORD:-}"
+BETA_W_L="${BETA_DJANGO_ADMIN_URL:-}"
+PROD_W_U="${PROD_DJANGO_ADMIN_USERNAME:-}"
+PROD_W_P="${PROD_DJANGO_ADMIN_PASSWORD:-}"
+PROD_W_L="${PROD_DJANGO_ADMIN_URL:-}"
+
+# Passphrase for .secrets.enc in NON_INTERACTIVE: env var, or SECRETS_DECRYPTION_KEY_FILE, or project file .secrets.key
+if [ -z "${SECRETS_DECRYPTION_KEY:-}" ]; then
+    if [ -n "${SECRETS_DECRYPTION_KEY_FILE:-}" ] && [ -f "${SECRETS_DECRYPTION_KEY_FILE}" ]; then
+        SECRETS_DECRYPTION_KEY="$(tr -d '\n\r' < "${SECRETS_DECRYPTION_KEY_FILE}")"
+        export SECRETS_DECRYPTION_KEY
+    elif [ -f ".secrets.key" ]; then
+        SECRETS_DECRYPTION_KEY="$(tr -d '\n\r' < ".secrets.key")"
+        export SECRETS_DECRYPTION_KEY
+    fi
 fi
 
 if [ -n "${DJANGO_TARGET_ENV:-}" ]; then
@@ -35,6 +72,7 @@ else
     export SESSION_FILE="beta_admin_session.json"
     export DJANGO_ADMIN_URL="$BETA_ADMIN_URL"
 fi
+export DJANGO_TARGET_ENV="$ENV_CHOICE"
 
 USE_SESSION=false
 if [ -f "$SESSION_FILE" ]; then
@@ -95,7 +133,8 @@ if [ "$RUN_SECRETS_DECRYPT" = "true" ]; then
         fi
         if [ "$_cred_ok" != "true" ]; then
             echo "Warning: NON_INTERACTIVE=1 but SECRETS_DECRYPTION_KEY is empty — cannot decrypt .secrets.enc." >&2
-            echo "  Export it, or add BETA_* / PROD_* to .secrets.env: SECRETS_DECRYPTION_KEY='your-validation-key' ..." >&2
+            echo "  Fix: put the validation key in project root file .secrets.key (chmod 600), or export SECRETS_DECRYPTION_KEY, or set SECRETS_DECRYPTION_KEY_FILE=/path/to/keyfile." >&2
+            echo "  Or add BETA_DJANGO_ADMIN_* / PROD_* to .secrets.env (plaintext)." >&2
         fi
     fi
 fi
@@ -109,6 +148,24 @@ else
     export DJANGO_ADMIN_USERNAME="${BETA_W_U}"
     export DJANGO_ADMIN_PASSWORD="${BETA_W_P}"
     export DJANGO_ADMIN_URL="${BETA_W_L:-$BETA_ADMIN_URL}"
+fi
+export DJANGO_ADMIN_USERNAME="${DJANGO_ADMIN_USERNAME:-$_IN_DJU}"
+export DJANGO_ADMIN_PASSWORD="${DJANGO_ADMIN_PASSWORD:-$_IN_DJP}"
+export DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL:-$_IN_DJL}"
+
+# Re-login when storage_state expires: need plaintext creds or decrypted .secrets.enc
+if [ "$USE_SESSION" = "true" ]; then
+    if [[ "$ENV_CHOICE" == "prod" ]]; then
+        if [ -z "${DJANGO_ADMIN_USERNAME:-}" ] || [ -z "${DJANGO_ADMIN_PASSWORD:-}" ]; then
+            echo "Warning: $SESSION_FILE exists but no PROD/BETA credentials loaded — if the session expired, Playwright cannot re-login." >&2
+            echo "  Fix: add PROD_DJANGO_ADMIN_* (or BETA_*) to .secrets.env, or set SECRETS_DECRYPTION_KEY for .secrets.enc." >&2
+        fi
+    else
+        if [ -z "${DJANGO_ADMIN_USERNAME:-}" ] || [ -z "${DJANGO_ADMIN_PASSWORD:-}" ]; then
+            echo "Warning: $SESSION_FILE exists but no BETA credentials loaded — if the session expired, Playwright cannot re-login." >&2
+            echo "  Fix: add BETA_DJANGO_ADMIN_USERNAME/PASSWORD to .secrets.env, or set SECRETS_DECRYPTION_KEY for .secrets.enc." >&2
+        fi
+    fi
 fi
 
 if [ "$USE_SESSION" != "true" ]; then

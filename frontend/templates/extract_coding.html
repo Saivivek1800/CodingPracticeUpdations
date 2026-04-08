@@ -201,41 +201,99 @@
                     }
                     const reader = r.body.getReader();
                     const dec = new TextDecoder();
+                    let sseBuffer = '';
+
+                    function ssePayloadFromEventBlock(block) {
+                        const lines = block.split('\n');
+                        const parts = [];
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) parts.push(line.slice(6));
+                        }
+                        return parts.join('\n');
+                    }
+
+                    function dispatchSsePayload(raw) {
+                        if (raw.trim() === '>>> DONE') {
+                            logLine('── Done ──', 'ok');
+                            return;
+                        }
+                        if (raw.startsWith('>>> CONVERTED_SESSION: ')) {
+                            const sid = raw.slice('>>> CONVERTED_SESSION: '.length).trim();
+                            logLine('>>> Fetching converted JSON for session…', 'hdr');
+                            fetch('/api/extract_coding_result/' + encodeURIComponent(sid))
+                                .then((res) => {
+                                    if (!res.ok) {
+                                        return res.json().then((j) => {
+                                            throw new Error(j.message || res.statusText);
+                                        }).catch(() => {
+                                            throw new Error(res.statusText || String(res.status));
+                                        });
+                                    }
+                                    return res.text();
+                                })
+                                .then((text) => {
+                                    const obj = JSON.parse(text);
+                                    const pretty = JSON.stringify(obj, null, 2);
+                                    convertedOutput.value = pretty;
+                                    if (!hasDownloaded) {
+                                        downloadConvertedJson(pretty);
+                                        hasDownloaded = true;
+                                        logLine('Auto-downloaded: coding_questions_output.json', 'ok');
+                                    }
+                                })
+                                .catch((e) => {
+                                    logLine('WARN: Could not load or parse converted JSON: ' + e, 'warn');
+                                });
+                            return;
+                        }
+                        if (raw.startsWith('>>> CONVERTED_JSON: ')) {
+                            try {
+                                const compact = raw.slice('>>> CONVERTED_JSON: '.length);
+                                const obj = JSON.parse(compact);
+                                const pretty = JSON.stringify(obj, null, 2);
+                                convertedOutput.value = pretty;
+                                if (!hasDownloaded) {
+                                    downloadConvertedJson(pretty);
+                                    hasDownloaded = true;
+                                    logLine('Auto-downloaded: coding_questions_output.json', 'ok');
+                                }
+                            } catch (e) {
+                                logLine('WARN: Failed to parse streamed converted JSON: ' + e, 'warn');
+                            }
+                            return;
+                        }
+                        if (raw.includes('PIPELINE_EXCEPTION') || raw.includes('>>> FAILED') || raw.includes('>>> ERROR')) logLine(raw, 'err');
+                        else if (raw.includes('PIPELINE_SKIP') || raw.includes('PIPELINE_SUMMARY')) logLine(raw, 'warn');
+                        else if (raw.includes('>>> TARGET') || raw.includes('>>> RUNNING') || raw.includes('>>> SUCCESS') || raw.includes('>>> OUTPUT')) logLine(raw, 'hdr');
+                        else logLine(raw);
+                    }
+
                     function pump() {
                         return reader.read().then(({ done, value }) => {
+                            if (value && value.length) {
+                                sseBuffer += dec.decode(value, { stream: true });
+                            }
+                            let sep;
+                            while ((sep = sseBuffer.indexOf('\n\n')) >= 0) {
+                                const block = sseBuffer.slice(0, sep);
+                                sseBuffer = sseBuffer.slice(sep + 2);
+                                const raw = ssePayloadFromEventBlock(block);
+                                if (raw !== '') dispatchSsePayload(raw);
+                            }
                             if (done) {
+                                sseBuffer += dec.decode();
+                                let sepDone;
+                                while ((sepDone = sseBuffer.indexOf('\n\n')) >= 0) {
+                                    const block = sseBuffer.slice(0, sepDone);
+                                    sseBuffer = sseBuffer.slice(sepDone + 2);
+                                    const raw = ssePayloadFromEventBlock(block);
+                                    if (raw !== '') dispatchSsePayload(raw);
+                                }
+                                if (sseBuffer.trim()) {
+                                    logLine('WARN: Stream ended with incomplete SSE data.', 'warn');
+                                }
                                 setRunning(false);
                                 return;
-                            }
-                            const chunk = dec.decode(value, { stream: true });
-                            const parts = chunk.split('\n\n');
-                            for (const line of parts) {
-                                if (!line.startsWith('data: ')) continue;
-                                const raw = line.slice(6);
-                                if (raw.trim() === '>>> DONE') {
-                                    logLine('── Done ──', 'ok');
-                                    continue;
-                                }
-                                if (raw.startsWith('>>> CONVERTED_JSON: ')) {
-                                    try {
-                                        const compact = raw.slice('>>> CONVERTED_JSON: '.length);
-                                        const obj = JSON.parse(compact);
-                                        const pretty = JSON.stringify(obj, null, 2);
-                                        convertedOutput.value = pretty;
-                                        if (!hasDownloaded) {
-                                            downloadConvertedJson(pretty);
-                                            hasDownloaded = true;
-                                            logLine('Auto-downloaded: coding_questions_output.json', 'ok');
-                                        }
-                                    } catch (e) {
-                                        logLine('WARN: Failed to parse streamed converted JSON: ' + e, 'warn');
-                                    }
-                                    continue;
-                                }
-                                if (raw.includes('PIPELINE_EXCEPTION') || raw.includes('>>> FAILED') || raw.includes('>>> ERROR')) logLine(raw, 'err');
-                                else if (raw.includes('PIPELINE_SKIP') || raw.includes('PIPELINE_SUMMARY')) logLine(raw, 'warn');
-                                else if (raw.includes('>>> TARGET') || raw.includes('>>> RUNNING') || raw.includes('>>> SUCCESS') || raw.includes('>>> OUTPUT')) logLine(raw, 'hdr');
-                                else logLine(raw);
                             }
                             return pump();
                         });

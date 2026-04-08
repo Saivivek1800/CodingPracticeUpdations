@@ -111,6 +111,24 @@
         <p id="tapTitle" class="text-xl md:text-2xl font-semibold text-white mb-2">Tap to format inputs &amp; run actions</p>
         <p id="tapSub" class="text-slate-500 text-sm">Step 1: format · Step 2: push everything (code → hints → description → metadata → evaluation metrics → weightages → testcases)</p>
     </div>
+
+    <div class="w-full max-w-2xl mt-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+        <span class="text-sm text-slate-300 block mb-2">Django admin target</span>
+        <div class="flex flex-wrap items-center gap-4">
+            <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-slate-200">
+                <input type="radio" name="mainEnv" value="beta" checked
+                    class="accent-cyan-500 w-4 h-4 border-slate-500 bg-slate-800 focus:ring-cyan-500/40">
+                Beta
+            </label>
+            <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-slate-200">
+                <input type="radio" name="mainEnv" value="prod"
+                    class="accent-cyan-500 w-4 h-4 border-slate-500 bg-slate-800 focus:ring-cyan-500/40">
+                Prod
+            </label>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">Prod skips evaluation metrics &amp; testcase weightage; failed steps are skipped so the rest still run.</p>
+    </div>
+
     <label class="w-full max-w-2xl mt-4 flex items-start gap-3 cursor-pointer rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-left">
         <input type="checkbox" id="skipTestcases" class="mt-1 rounded border-slate-600 text-cyan-500 focus:ring-cyan-500/30">
         <span class="text-sm text-slate-400">
@@ -137,7 +155,7 @@
     <div class="w-full max-w-2xl mt-8">
         <div class="flex items-center justify-between mb-2 px-1">
             <span id="statusLine" class="text-xs font-medium text-slate-500"></span>
-            <span class="text-xs text-slate-600">Beta · session on server</span>
+            <span class="text-xs text-slate-600">Target = radio above</span>
         </div>
         <div id="terminal" class="terminal p-4 whitespace-pre-wrap"></div>
     </div>
@@ -159,9 +177,14 @@
             } catch (e) { }
         }
 
+        function mainEnvInputs() {
+            return document.querySelectorAll('input[name="mainEnv"]');
+        }
+
         function setRunning(running) {
             tapZone.classList.toggle('running', running);
             tapZone.setAttribute('aria-busy', running ? 'true' : 'false');
+            mainEnvInputs().forEach((el) => { el.disabled = running; });
             if (running) {
                 tapIcon.innerHTML = '<i class="fas fa-circle-notch fa-spin text-3xl"></i>';
                 tapTitle.textContent = 'Updating…';
@@ -211,7 +234,8 @@
             setRunning(true);
 
             const skipTestcases = document.getElementById('skipTestcases').checked;
-            const body = { content: rawJson };
+            const djangoTarget = document.querySelector('input[name="mainEnv"]:checked')?.value || 'beta';
+            const body = { content: rawJson, django_target_env: djangoTarget };
             if (skipTestcases) body.skip_testcases = true;
 
             fetch('/api/run_everything', {

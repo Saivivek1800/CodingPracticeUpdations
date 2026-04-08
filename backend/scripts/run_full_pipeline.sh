@@ -73,13 +73,13 @@ UPDATERS=(
 
 if [ "${DJANGO_TARGET_ENV:-}" = "prod" ]; then
     echo ""
-    echo ">>> DJANGO_TARGET_ENV=prod — skipping evaluation metrics updater (no access in prod)."
+    echo ">>> DJANGO_TARGET_ENV=prod — skipping evaluation metrics & testcase weightage (limited prod access)."
+    echo ">>> Individual step failures are skipped; later steps still run."
     UPDATERS=(
         "run_code_updater.sh"
         "run_hints_updater.sh"
         "run_description_updater.sh"
         "run_metadata_updater.sh"
-        "run_weightage_updater.sh"
         "run_loader.sh"
     )
 fi
@@ -122,7 +122,7 @@ echo ""
 echo "========== PHASE 2: PERFORM ACTIONS (push to Django admin) =========="
 for s in "${UPDATERS[@]}"; do
     echo ">>> RUNNING: $s"
-    printf 'beta\n\n' | bash "$s"
+    printf '%s\n\n' "${DJANGO_TARGET_ENV:-beta}" | bash "$s"
     _up_ec=$?
     if [ "$_up_ec" -ne 0 ]; then
         note_fail "PHASE_2: $s" "$_up_ec"
