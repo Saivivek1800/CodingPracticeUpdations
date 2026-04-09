@@ -31,19 +31,24 @@ fi
 
 echo ""
 echo "--- credentials (Phase 2) ---"
-if [ -f ".secrets.env" ]; then
-  if grep -q "^BETA_DJANGO_ADMIN_USERNAME=.\+" .secrets.env 2>/dev/null; then
-    echo "[OK] .secrets.env has BETA_DJANGO_ADMIN_USERNAME set"
-  else
-    echo "[WARN] .secrets.env exists but BETA_DJANGO_ADMIN_USERNAME looks empty"
-  fi
+if [ -f ".secrets.enc" ] && [ -f ".secrets.key" ]; then
+  echo "[OK] .secrets.enc + .secrets.key — passwords need not live in .secrets.env"
+elif [ -f ".secrets.enc" ] && [ -n "${SECRETS_DECRYPTION_KEY:-}" ]; then
+  echo "[OK] .secrets.enc + SECRETS_DECRYPTION_KEY in environment"
+elif [ -f ".secrets.env" ] && grep -qE '^[[:space:]]*BETA_DJANGO_ADMIN_USERNAME=[^[:space:]]' .secrets.env 2>/dev/null; then
+  echo "[OK] .secrets.env has BETA_DJANGO_ADMIN_USERNAME set (plaintext mode)"
+elif [ -f ".secrets.env" ]; then
+  echo "[WARN] .secrets.env exists but no beta username line — add creds or use .secrets.enc + .secrets.key"
 else
-  echo "[WARN] .secrets.env missing"
+  echo "[WARN] No .secrets.env — OK if you use .secrets.enc + .secrets.key (see .secrets.env.example)"
 fi
 if [ -f ".secrets.enc" ]; then
-  echo "[INFO] .secrets.enc present (need SECRETS_DECRYPTION_KEY if no .secrets.env)"
+  echo "[INFO] .secrets.enc present"
 else
-  echo "[INFO] .secrets.enc not found"
+  echo "[INFO] .secrets.enc not found (optional if plaintext .secrets.env has full creds)"
+fi
+if [ -f ".secrets.key" ]; then
+  echo "[INFO] .secrets.key present"
 fi
 
 echo ""

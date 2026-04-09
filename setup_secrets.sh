@@ -1,5 +1,6 @@
 #!/bin/bash
-# setup_secrets.sh
+# Encrypt .secrets.env → .secrets.enc. You can then delete plain .secrets.env and use only
+# .secrets.enc + .secrets.key (or SECRETS_DECRYPTION_KEY). See .secrets.env.example.
 
 SECRETS_FILE=".secrets.env"
 ENCRYPTED_FILE=".secrets.enc"
