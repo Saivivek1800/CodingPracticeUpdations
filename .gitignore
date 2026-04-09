@@ -4,8 +4,6 @@ venv/
 env/
 
 # Secrets (do not expose)
-.secrets.env
-.secrets.enc
 .secrets.key
 
 # Session cookies (local only — expire; redundant if .secrets.env is in repo)
