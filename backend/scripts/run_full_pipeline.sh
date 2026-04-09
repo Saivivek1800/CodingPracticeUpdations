@@ -2,6 +2,8 @@
 # One-shot: generate all inputs from input.json, then push everything to beta admin.
 # Continues past individual step failures so later updaters still run.
 # Non-interactive: printf 'beta\n\n' | bash run_full_pipeline.sh
+#
+# Exit: 0 = all OK; 1 = some step failed (PIPELINE_SUMMARY); 2 = venv/Playwright missing (run scripts/bootstrap.sh).
 
 # Do not use set -e — we record failures and continue.
 
@@ -22,7 +24,7 @@ if [ ! -f "venv/bin/activate" ]; then
     echo "      source venv/bin/activate"
     echo "      NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh"
     echo ""
-    exit 1
+    exit 2
 fi
 # shellcheck disable=SC1091
 source venv/bin/activate
@@ -33,7 +35,7 @@ if ! python3 -c "import playwright" 2>/dev/null; then
     echo "    Run: bash scripts/bootstrap.sh"
     echo "    (or: pip install -r requirements.txt && playwright install chromium)"
     echo ""
-    exit 1
+    exit 2
 fi
 
 export PYTHONUNBUFFERED=1

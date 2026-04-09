@@ -21,6 +21,62 @@ def _normalize_django_target_env(value, default="beta"):
     return t if t in ("beta", "prod") else default
 
 
+def _venv_python_executable():
+    bindir = os.path.join(BASE_DIR, "venv", "bin")
+    for name in ("python3", "python"):
+        p = os.path.join(bindir, name)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def pipeline_environment_blocking_issues():
+    """
+    Issues that always abort the full pipeline (fresh git clone without bootstrap).
+    Not secrets-related: missing creds fail later with clearer updater logs.
+    """
+    issues = []
+    activate = os.path.join(BASE_DIR, "venv", "bin", "activate")
+    if not os.path.isfile(activate):
+        issues.append(
+            "venv is missing. After git clone, run from project root: bash scripts/bootstrap.sh "
+            "then restart the Flask/Gunicorn server if it is already running."
+        )
+        return issues
+    venv_py = _venv_python_executable()
+    if not venv_py:
+        issues.append("venv exists but bin/python is missing — run: bash scripts/bootstrap.sh")
+        return issues
+    try:
+        r = subprocess.run(
+            [venv_py, "-c", "import playwright"],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if r.returncode != 0:
+            issues.append(
+                "Playwright is not installed in this venv. Run: bash scripts/bootstrap.sh "
+                "(installs requirements.txt and playwright install chromium)."
+            )
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        issues.append(f"Could not verify Playwright in venv ({e}). Try: bash scripts/bootstrap.sh")
+    return issues
+
+
+def beta_django_credentials_resolved():
+    """True if Beta admin username+password are available after the same merge/decrypt as pipeline children."""
+    test_env = os.environ.copy()
+    try:
+        _prepare_django_child_env(test_env)
+    except Exception:
+        return False
+    u = str(test_env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
+    p = str(test_env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
+    return bool(u and p)
+
+
 _EXTRACT_SESSION_ID_RE = re.compile(r"^extract_[0-9a-f]{32}$")
 
 
@@ -321,6 +377,12 @@ def _pipeline_worker():
             if rc == 0:
                 _job_append(job_id, ">>> SUCCESS: full pipeline completed (all steps OK).")
                 _job_update(job_id, status="success", done=True, exit_code=0, finished_at=time.time())
+            elif rc == 2:
+                _job_append(
+                    job_id,
+                    ">>> FAILED: environment not ready (venv or Playwright). Fresh clone: bash scripts/bootstrap.sh from project root, then restart the server.",
+                )
+                _job_update(job_id, status="failed", done=True, exit_code=rc, finished_at=time.time())
             else:
                 _job_append(job_id, f">>> FAILED (partial run): run_full_pipeline.sh exited with code {rc}")
                 _job_append(job_id, ">>> Later steps still ran after earlier failures. Search for PIPELINE_SKIP and PIPELINE_SUMMARY above.")
@@ -858,6 +920,16 @@ def run_everything():
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 400
 
+    blocking = pipeline_environment_blocking_issues()
+    if blocking:
+        return jsonify(
+            {
+                "success": False,
+                "message": " ".join(blocking),
+                "hint": "From project root: bash scripts/bootstrap.sh then restart the server.",
+            }
+        ), 503
+
     skip_jupyter = bool(data.get("skip_jupyter"))
     skip_testcases = bool(data.get("skip_testcases"))
     django_target_env = _normalize_django_target_env(data.get("django_target_env"))
@@ -923,12 +995,20 @@ def extract_coding_result(session_id):
 
 @app.route("/health", methods=["GET"])
 def health():
+    env_issues = pipeline_environment_blocking_issues()
     return jsonify(
         {
             "ok": True,
             "status": "healthy",
             "pipeline_workers": PIPELINE_WORKERS,
             "queue_depth": PIPELINE_QUEUE.qsize(),
+            "pipeline_environment": {
+                "venv_bin_activate": os.path.isfile(os.path.join(BASE_DIR, "venv", "bin", "activate")),
+                "playwright_import_ok": not bool(env_issues),
+                "blocking_issues": env_issues,
+                "beta_django_credentials_ok": beta_django_credentials_resolved(),
+                "after_git_clone_run": "bash scripts/bootstrap.sh",
+            },
             "django_secrets_files": {
                 "project_root": BASE_DIR,
                 "has_dot_secrets_env": os.path.isfile(os.path.join(BASE_DIR, ".secrets.env")),

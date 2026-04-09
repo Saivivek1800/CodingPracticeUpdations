@@ -245,7 +245,10 @@
             })
                 .then(r => {
                     if (!r.ok) {
-                        return r.json().then(j => { throw new Error(j.message || r.statusText); });
+                        return r.json().then(j => {
+                            const extra = j.hint ? (' ' + j.hint) : '';
+                            throw new Error((j.message || r.statusText) + extra);
+                        });
                     }
                     const reader = r.body.getReader();
                     const dec = new TextDecoder();
