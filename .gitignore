@@ -1,18 +1,16 @@
-# Virtual environment
+# Virtual environment — not needed in git; run: bash scripts/bootstrap.sh
 venv/
 .venv/
 env/
 
-# Secrets (do not expose)
+# Decryption key — never commit (whoever has it can read .secrets.enc).
+# .secrets.env and .secrets.enc are NOT listed here so a private team repo may track them if you choose.
 .secrets.key
 
-# Session cookies (local only — expire; redundant if .secrets.env is in repo)
+# Playwright session cookies — local only, expire; recreated after login
 beta_admin_session.json
 prod_admin_session.json
 admin_session.json
-
-# NOTE: .secrets.env and .secrets.enc are tracked so teammates can clone and run Phase 2.
-# Use a PRIVATE repo only. If the repo is ever public or leaked, rotate all admin passwords immediately.
 
 # Python
 __pycache__/
@@ -34,5 +32,5 @@ build/
 # Job logs and uploaded session payloads (can be large)
 sessions/
 
-# Environment files with real values
+# Local-only env overrides
 *.local.env

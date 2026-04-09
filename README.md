@@ -35,7 +35,10 @@ bash scripts/check_setup.sh    # optional sanity check
 
 ### Secrets (credentials)
 
-Sensitive files are **gitignored** (`.secrets.env`, `.secrets.enc`, `.secrets.key`). Do not commit real credentials.
+| File | In git? | Notes |
+|------|---------|--------|
+| **`.secrets.key`** | **No** (gitignored) | Decryption key — never commit next to `.secrets.enc`. |
+| **`.secrets.env`** / **`.secrets.enc`** | Optional | Not gitignored: a **private** repo may commit them so teammates can run after clone. **Public repos:** do not commit; use `.secrets.env.example` only. |
 
 **Recommended — no plaintext passwords in `.secrets.env`:**
 
