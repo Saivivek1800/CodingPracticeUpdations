@@ -3,6 +3,19 @@
 # shared across Gunicorn worker processes — do not raise GUNICORN_WORKERS above 1).
 set -euo pipefail
 cd "$(dirname "$0")"
+ROOT="$(pwd)"
+
+# Load team secrets into the process environment before Gunicorn (no manual export needed).
+# Priority: already-set SECRETS_DECRYPTION_KEY; then .secrets.env; then .secrets.key fills gaps.
+if [ -f "$ROOT/.secrets.env" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ROOT/.secrets.env"
+  set +a
+fi
+if [ -z "${SECRETS_DECRYPTION_KEY:-}" ] && [ -f "$ROOT/.secrets.key" ]; then
+  export SECRETS_DECRYPTION_KEY="$(tr -d '\n\r' < "$ROOT/.secrets.key")"
+fi
 
 export FLASK_DEBUG="${FLASK_DEBUG:-0}"
 export GUNICORN_WORKERS="${GUNICORN_WORKERS:-1}"

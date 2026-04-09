@@ -16,6 +16,53 @@ FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 TEMPLATES_DIR = os.path.join(FRONTEND_DIR, "templates")
 
 
+def _eager_load_secrets_decryption_key_into_os_environ() -> None:
+    """
+    Production / Gunicorn: load passphrase for .secrets.enc without manual `export`.
+    Order: keep existing env; else .secrets.key (one line); else SECRETS_DECRYPTION_KEY= in .secrets.env.
+    Runs once when this module is imported (dev server, gunicorn workers).
+    """
+    if str(os.environ.get("SECRETS_DECRYPTION_KEY", "")).strip():
+        return
+    key_file = os.path.join(BASE_DIR, ".secrets.key")
+    if os.path.isfile(key_file):
+        try:
+            with open(key_file, "r", encoding="utf-8") as f:
+                k = f.read().strip()
+            if k:
+                os.environ["SECRETS_DECRYPTION_KEY"] = k
+                return
+        except OSError:
+            pass
+    env_file = os.path.join(BASE_DIR, ".secrets.env")
+    if not os.path.isfile(env_file):
+        return
+    try:
+        with open(env_file, "r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:].strip()
+                if "=" not in line:
+                    continue
+                name, _, val = line.partition("=")
+                if name.strip() != "SECRETS_DECRYPTION_KEY":
+                    continue
+                val = val.strip()
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                    val = val[1:-1]
+                if val:
+                    os.environ["SECRETS_DECRYPTION_KEY"] = val
+                    return
+    except OSError:
+        pass
+
+
+_eager_load_secrets_decryption_key_into_os_environ()
+
+
 def _normalize_django_target_env(value, default="beta"):
     t = (default if value is None else str(value)).strip().lower()
     return t if t in ("beta", "prod") else default
@@ -130,7 +177,7 @@ def phase2_django_auth_ready(django_target_env: str) -> tuple[bool, str | None]:
         "Fix — pick ONE, then restart the Flask/Gunicorn server:",
         "  1) Edit .secrets.env — set BETA_DJANGO_ADMIN_USERNAME and BETA_DJANGO_ADMIN_PASSWORD (not URL-only).",
         "  2) Encrypted team file: keep .secrets.enc in repo root, then EITHER add .secrets.key (one line, chmod 600) OR add to .secrets.env: SECRETS_DECRYPTION_KEY=same-passphrase-as-setup_secrets.sh (restart server after edit).",
-        "  3) Or export SECRETS_DECRYPTION_KEY in the shell before starting Gunicorn/Flask.",
+        "  3) Or export SECRETS_DECRYPTION_KEY before start (optional — run_production.sh and the app auto-read .secrets.key / .secrets.env).",
         "  4) Or copy a valid beta_admin_session.json into the project root (temporary; expires).",
         "",
         "Verify decrypt: SECRETS_DECRYPTION_KEY=$(tr -d '\\n\\r' < .secrets.key) bash scripts/verify_secrets_enc.sh",
