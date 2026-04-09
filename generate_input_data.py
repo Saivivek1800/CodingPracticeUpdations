@@ -1,4 +1,5 @@
 import json
+import sys
 
 def process_item(item, output_data):
     if "test_cases" in item:
@@ -35,6 +36,7 @@ def main():
         print("Successfully formatted input.json to input_data.json without is_hidden and weightage")
     except Exception as e:
         print(f"Error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

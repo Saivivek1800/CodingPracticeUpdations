@@ -1,4 +1,5 @@
 import json
+import sys
 
 def process_details(details, output_data):
     if not details:
@@ -65,6 +66,7 @@ def main():
         print("Successfully formatted input.json to input_code_data.json (excluding unwanted fields).")
     except Exception as e:
         print(f"Error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

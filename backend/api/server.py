@@ -77,6 +77,34 @@ def beta_django_credentials_resolved():
     return bool(u and p)
 
 
+def phase2_django_auth_ready(django_target_env: str) -> tuple[bool, str | None]:
+    """
+    Phase 2 Playwright updaters need either DJANGO_ADMIN_USERNAME/PASSWORD (after merge/decrypt)
+    or a saved session file at project root. Session files are gitignored — clones often have neither
+    until secrets are configured, while the maintainer's laptop still has beta_admin_session.json.
+    """
+    t = _normalize_django_target_env(django_target_env)
+    test_env = os.environ.copy()
+    test_env["DJANGO_TARGET_ENV"] = t
+    try:
+        _prepare_django_child_env(test_env)
+    except Exception:
+        return False, "Could not load project secrets (.secrets.env or .secrets.enc decrypt)."
+    u = str(test_env.get("DJANGO_ADMIN_USERNAME", "")).strip()
+    p = str(test_env.get("DJANGO_ADMIN_PASSWORD", "")).strip()
+    if u and p:
+        return True, None
+    sess_name = "prod_admin_session.json" if t == "prod" else "beta_admin_session.json"
+    if os.path.isfile(os.path.join(BASE_DIR, sess_name)):
+        return True, None
+    return False, (
+        "Phase 2 cannot log into Django admin: no password/username in env and no saved session file. "
+        "Your laptop may still work because `beta_admin_session.json` exists locally (gitignored). "
+        "After git clone, add BETA_DJANGO_ADMIN_USERNAME/PASSWORD to .secrets.env, or use .secrets.enc + .secrets.key, "
+        "or copy a valid session JSON into the project root. URL-only .secrets.env is not enough."
+    )
+
+
 _EXTRACT_SESSION_ID_RE = re.compile(r"^extract_[0-9a-f]{32}$")
 
 
@@ -930,9 +958,19 @@ def run_everything():
             }
         ), 503
 
+    django_target_env = _normalize_django_target_env(data.get("django_target_env"))
+    auth_ok, auth_msg = phase2_django_auth_ready(django_target_env)
+    if not auth_ok:
+        return jsonify(
+            {
+                "success": False,
+                "message": auth_msg or "Phase 2 authentication not configured.",
+                "hint": "See README (secrets) and /health field phase2_django_auth.",
+            }
+        ), 503
+
     skip_jupyter = bool(data.get("skip_jupyter"))
     skip_testcases = bool(data.get("skip_testcases"))
-    django_target_env = _normalize_django_target_env(data.get("django_target_env"))
     job_id = _create_pipeline_job(session_dir, skip_jupyter, skip_testcases, django_target_env=django_target_env)
     return Response(_stream_job_logs(job_id), mimetype="text/event-stream")
 
@@ -996,6 +1034,8 @@ def extract_coding_result(session_id):
 @app.route("/health", methods=["GET"])
 def health():
     env_issues = pipeline_environment_blocking_issues()
+    b_ok, b_msg = phase2_django_auth_ready("beta")
+    p_ok, p_msg = phase2_django_auth_ready("prod")
     return jsonify(
         {
             "ok": True,
@@ -1008,6 +1048,14 @@ def health():
                 "blocking_issues": env_issues,
                 "beta_django_credentials_ok": beta_django_credentials_resolved(),
                 "after_git_clone_run": "bash scripts/bootstrap.sh",
+            },
+            "phase2_django_auth": {
+                "beta_ready": b_ok,
+                "beta_hint_if_not_ready": None if b_ok else b_msg,
+                "prod_ready": p_ok,
+                "prod_hint_if_not_ready": None if p_ok else p_msg,
+                "has_beta_admin_session_json": os.path.isfile(os.path.join(BASE_DIR, "beta_admin_session.json")),
+                "has_prod_admin_session_json": os.path.isfile(os.path.join(BASE_DIR, "prod_admin_session.json")),
             },
             "django_secrets_files": {
                 "project_root": BASE_DIR,

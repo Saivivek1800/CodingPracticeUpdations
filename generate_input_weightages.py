@@ -1,4 +1,5 @@
 import json
+import sys
 
 
 def add_weightages(item, output_data):
@@ -33,6 +34,7 @@ def main():
         print("Successfully formatted input.json to input_weightages.json (testcase id -> weightage)")
     except Exception as e:
         print(f"Error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

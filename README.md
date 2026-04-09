@@ -37,6 +37,8 @@ bash scripts/check_setup.sh    # optional sanity check
 
 **Credentials:** Copy **`.secrets.env.example`** → **`.secrets.env`** and/or use **`.secrets.enc` + `.secrets.key`**. A clone without secrets will start the app but Phase 2 updaters will fail until these exist.
 
+**Why Phase 2 works on your laptop but fails after `git clone`:** `beta_admin_session.json` (Playwright cookies) is **gitignored**. If you have that file locally, admin updates can run **without** passwords in `.secrets.env`. New clones do not get that file — teammates must add **username/password** (or encrypted secrets + **`.secrets.key`**) or copy a valid session file into the project root. Check **`GET /health`** → **`phase2_django_auth`** before running the full pipeline from the UI.
+
 ### Secrets (credentials)
 
 | File | In git? | Notes |
@@ -183,6 +185,7 @@ Keep **Gunicorn workers at 1** for this app: in-process queue and SSE state do n
 
 | Symptom | What to check |
 |---------|----------------|
+| Phase 2 fails for teammates, works for you | They have no `beta_admin_session.json`; add real credentials or share `.secrets.key` + `.secrets.enc`. UI returns **503** with an explanation if Phase 2 auth is not ready. |
 | Login page instead of admin | Expired session; ensure `.secrets.enc` + `.secrets.key` or plaintext creds; delete stale `*_admin_session.json` if needed. |
 | Admin 404 | `DJANGO_ADMIN_URL` host and model paths (e.g. eval metrics). |
 | Playwright / Chromium errors | `bash scripts/bootstrap.sh`; on Linux, `playwright install-deps chromium` (may need `sudo`). |
