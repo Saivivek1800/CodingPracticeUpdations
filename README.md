@@ -35,7 +35,7 @@ bash scripts/check_setup.sh    # optional sanity check
 
 **After `git clone`:** `venv/` is not in the repository (by design). You must run **`bash scripts/bootstrap.sh`** once on each machine, then start the server. If you skip this, the dashboard full pipeline returns **503** with a short explanation, and `/health` shows `pipeline_environment.blocking_issues`.
 
-**Credentials:** Copy **`.secrets.env.example`** → **`.secrets.env`** and/or use **`.secrets.enc` + `.secrets.key`**. A clone without secrets will start the app but Phase 2 updaters will fail until these exist.
+**Credentials:** Copy **`.secrets.env.example`** → **`.secrets.env`**. With **`.secrets.enc`**, teammates must supply the decryption passphrase via **one** of: **`SECRETS_DECRYPTION_KEY=...` inside `.secrets.env`** (now loaded by the server), **`.secrets.key`** in project root, or **`export SECRETS_DECRYPTION_KEY`** before starting Gunicorn. A clone with only `.secrets.enc` and URL-only `.secrets.env` is not enough.
 
 **Why Phase 2 works on your laptop but fails after `git clone`:** `beta_admin_session.json` (Playwright cookies) is **gitignored**. If you have that file locally, admin updates can run **without** passwords in `.secrets.env`. New clones do not get that file — teammates must add **username/password** (or encrypted secrets + **`.secrets.key`**) or copy a valid session file into the project root. Check **`GET /health`** → **`phase2_django_auth`** before running the full pipeline from the UI.
 

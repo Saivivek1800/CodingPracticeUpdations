@@ -77,6 +77,22 @@ def beta_django_credentials_resolved():
     return bool(u and p)
 
 
+def _dotenv_has_secrets_decryption_key() -> bool:
+    """True if .secrets.env contains a non-empty SECRETS_DECRYPTION_KEY= line (read from disk)."""
+    path = os.path.join(BASE_DIR, ".secrets.env")
+    if not os.path.isfile(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                parsed = _parse_secrets_env_line(line)
+                if parsed and parsed[0] == "SECRETS_DECRYPTION_KEY" and str(parsed[1]).strip():
+                    return True
+    except OSError:
+        pass
+    return False
+
+
 def phase2_django_auth_ready(django_target_env: str) -> tuple[bool, str | None]:
     """
     Phase 2 Playwright updaters need either DJANGO_ADMIN_USERNAME/PASSWORD (after merge/decrypt)
@@ -104,6 +120,8 @@ def phase2_django_auth_ready(django_target_env: str) -> tuple[bool, str | None]:
     has_enc = os.path.isfile(enc_path)
     has_key_file = os.path.isfile(key_path)
     has_key_env = bool(str(os.environ.get("SECRETS_DECRYPTION_KEY", "")).strip())
+    has_key_dotenv = _dotenv_has_secrets_decryption_key()
+    any_decrypt_key = has_key_file or has_key_env or has_key_dotenv
 
     lines = [
         "Phase 2 cannot log into Django admin: no username/password loaded and no saved session file.",
@@ -111,22 +129,22 @@ def phase2_django_auth_ready(django_target_env: str) -> tuple[bool, str | None]:
         "",
         "Fix — pick ONE, then restart the Flask/Gunicorn server:",
         "  1) Edit .secrets.env — set BETA_DJANGO_ADMIN_USERNAME and BETA_DJANGO_ADMIN_PASSWORD (not URL-only).",
-        "  2) Encrypted team file: keep .secrets.enc in the repo root and add .secrets.key (one line = same passphrase as setup_secrets.sh). chmod 600 .secrets.key",
-        "  3) Or export SECRETS_DECRYPTION_KEY in the shell before starting the server (if you do not use .secrets.key).",
+        "  2) Encrypted team file: keep .secrets.enc in repo root, then EITHER add .secrets.key (one line, chmod 600) OR add to .secrets.env: SECRETS_DECRYPTION_KEY=same-passphrase-as-setup_secrets.sh (restart server after edit).",
+        "  3) Or export SECRETS_DECRYPTION_KEY in the shell before starting Gunicorn/Flask.",
         "  4) Or copy a valid beta_admin_session.json into the project root (temporary; expires).",
         "",
         "Verify decrypt: SECRETS_DECRYPTION_KEY=$(tr -d '\\n\\r' < .secrets.key) bash scripts/verify_secrets_enc.sh",
         "Check status: GET /health → phase2_django_auth",
     ]
-    if has_enc and not has_key_file and not has_key_env:
+    if has_enc and not any_decrypt_key:
         lines.insert(
             4,
-            "→ Detected .secrets.enc but no .secrets.key and no SECRETS_DECRYPTION_KEY in the server process — add the key file or env var, then restart the server.",
+            "→ Detected .secrets.enc but no decryption key: add SECRETS_DECRYPTION_KEY=... to .secrets.env, or .secrets.key, or export SECRETS_DECRYPTION_KEY; then restart the server.",
         )
-    elif has_enc and (has_key_file or has_key_env):
+    elif has_enc and any_decrypt_key:
         lines.insert(
             4,
-            "→ .secrets.enc is present; if the passphrase is wrong, decrypt fails silently — run verify_secrets_enc.sh below.",
+            "→ .secrets.enc + a key are present; if the passphrase is wrong, decrypt fails silently — run verify_secrets_enc.sh below.",
         )
     elif os.path.isfile(env_path) and not has_enc:
         lines.insert(
@@ -230,7 +248,13 @@ def _merge_project_secrets_env_into(env: dict) -> None:
                 if not parsed:
                     continue
                 k, v = parsed
-                if k not in ("SECRETS_DECRYPTION_KEY", "SECRETS_DECRYPTION_KEY_FILE") and not (
+                # Allow decryption key from .secrets.env so teammates need only one file (with .secrets.enc),
+                # without a separate .secrets.key or systemd env. Never commit real values to a public repo.
+                if k in ("SECRETS_DECRYPTION_KEY", "SECRETS_DECRYPTION_KEY_FILE"):
+                    if str(v).strip() and not str(env.get(k, "")).strip():
+                        env[k] = v.strip()
+                    continue
+                if not (
                     k.startswith("BETA_DJANGO_")
                     or k.startswith("PROD_DJANGO_")
                     or k.startswith("DJANGO_EVAL_")
