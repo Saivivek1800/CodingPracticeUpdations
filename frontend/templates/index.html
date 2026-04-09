@@ -246,8 +246,9 @@
                 .then(r => {
                     if (!r.ok) {
                         return r.json().then(j => {
-                            const extra = j.hint ? (' ' + j.hint) : '';
-                            throw new Error((j.message || r.statusText) + extra);
+                            const base = j.message || r.statusText;
+                            const extra = j.hint ? ('\n\n' + j.hint) : '';
+                            throw new Error(base + extra);
                         });
                     }
                     const reader = r.body.getReader();
@@ -280,8 +281,16 @@
                 })
                 .catch(err => {
                     const msg = err && err.message ? err.message : String(err);
-                    logLine('Error: ' + msg, 'err');
-                    logLine('(If the log stopped mid-run, the server process may have crashed or the connection dropped.)', 'err');
+                    const lines = msg.split('\n').map(s => s.trimEnd()).filter(s => s.length > 0);
+                    if (lines.length > 1) {
+                        logLine('Setup required (Phase 2 auth):', 'err');
+                        lines.forEach(s => logLine(s, 'err'));
+                    } else {
+                        logLine('Error: ' + msg, 'err');
+                    }
+                    if (!msg.includes('Phase 2 cannot log into Django admin') && !msg.includes('Phase 2 needs Django admin')) {
+                        logLine('(If the log stopped mid-run, the server process may have crashed or the connection dropped.)', 'err');
+                    }
                     setRunning(false);
                     statusLine.textContent = 'failed';
                 });

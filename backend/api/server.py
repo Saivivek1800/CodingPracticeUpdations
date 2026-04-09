@@ -97,12 +97,43 @@ def phase2_django_auth_ready(django_target_env: str) -> tuple[bool, str | None]:
     sess_name = "prod_admin_session.json" if t == "prod" else "beta_admin_session.json"
     if os.path.isfile(os.path.join(BASE_DIR, sess_name)):
         return True, None
-    return False, (
-        "Phase 2 cannot log into Django admin: no password/username in env and no saved session file. "
-        "Your laptop may still work because `beta_admin_session.json` exists locally (gitignored). "
-        "After git clone, add BETA_DJANGO_ADMIN_USERNAME/PASSWORD to .secrets.env, or use .secrets.enc + .secrets.key, "
-        "or copy a valid session JSON into the project root. URL-only .secrets.env is not enough."
-    )
+
+    enc_path = os.path.join(BASE_DIR, ".secrets.enc")
+    key_path = os.path.join(BASE_DIR, ".secrets.key")
+    env_path = os.path.join(BASE_DIR, ".secrets.env")
+    has_enc = os.path.isfile(enc_path)
+    has_key_file = os.path.isfile(key_path)
+    has_key_env = bool(str(os.environ.get("SECRETS_DECRYPTION_KEY", "")).strip())
+
+    lines = [
+        "Phase 2 cannot log into Django admin: no username/password loaded and no saved session file.",
+        "(Maintainers often still have beta_admin_session.json locally — it is gitignored, so clones do not.)",
+        "",
+        "Fix — pick ONE, then restart the Flask/Gunicorn server:",
+        "  1) Edit .secrets.env — set BETA_DJANGO_ADMIN_USERNAME and BETA_DJANGO_ADMIN_PASSWORD (not URL-only).",
+        "  2) Encrypted team file: keep .secrets.enc in the repo root and add .secrets.key (one line = same passphrase as setup_secrets.sh). chmod 600 .secrets.key",
+        "  3) Or export SECRETS_DECRYPTION_KEY in the shell before starting the server (if you do not use .secrets.key).",
+        "  4) Or copy a valid beta_admin_session.json into the project root (temporary; expires).",
+        "",
+        "Verify decrypt: SECRETS_DECRYPTION_KEY=$(tr -d '\\n\\r' < .secrets.key) bash scripts/verify_secrets_enc.sh",
+        "Check status: GET /health → phase2_django_auth",
+    ]
+    if has_enc and not has_key_file and not has_key_env:
+        lines.insert(
+            4,
+            "→ Detected .secrets.enc but no .secrets.key and no SECRETS_DECRYPTION_KEY in the server process — add the key file or env var, then restart the server.",
+        )
+    elif has_enc and (has_key_file or has_key_env):
+        lines.insert(
+            4,
+            "→ .secrets.enc is present; if the passphrase is wrong, decrypt fails silently — run verify_secrets_enc.sh below.",
+        )
+    elif os.path.isfile(env_path) and not has_enc:
+        lines.insert(
+            4,
+            "→ .secrets.env exists but has no usable BETA passwords (URL-only is not enough). Add USERNAME/PASSWORD lines.",
+        )
+    return False, "\n".join(lines)
 
 
 _EXTRACT_SESSION_ID_RE = re.compile(r"^extract_[0-9a-f]{32}$")
@@ -965,7 +996,7 @@ def run_everything():
             {
                 "success": False,
                 "message": auth_msg or "Phase 2 authentication not configured.",
-                "hint": "See README (secrets) and /health field phase2_django_auth.",
+                "hint": "Restart the server after editing .secrets.env or adding .secrets.key.",
             }
         ), 503
 
