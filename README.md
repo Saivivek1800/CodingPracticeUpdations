@@ -1,40 +1,61 @@
-# CodingPracticeUpdations
+# Django admin automation
 
-Web UI and CLI automation for bulk-updating coding-question content in Django admin.
+Web dashboard and CLI tools to bulk-update **coding questions** in Django admin: code, hints, descriptions, metadata, evaluation metrics, testcase weightages, and content-loader JSON. Uses **Python**, **Playwright** (Chromium), and **Flask** for a local API and live log streaming.
 
-This project converts structured JSON inputs into admin updates (code, hints, description, metadata, evaluation metrics, weightages, and loader/testcase data) using Python + Playwright.
+---
 
-## Quick commands
+## Features
 
-Use these after **clone** or **`git pull`** when dependencies may have changed:
+| Area | Description |
+|------|-------------|
+| **Main updater** | Generate inputs from `input.json`, run formatters, push updates to **Beta** or **Prod** admin (prod skips some steps—see pipeline section). |
+| **Editorial** | Update learning-resource editorial content by **question UUID** — **Beta only** (no prod selector). |
+| **Extract coding JSON** | Trigger `EXTRACT_CODING_QUESTION_CONTENT`, wait for completion, download result, convert to coding JSON; shows parsed errors (including bodies behind `exception` URLs). |
+| **Queue / SSE** | Dashboard can queue pipeline jobs and stream logs over Server-Sent Events. |
+
+---
+
+## Requirements
+
+- **Python 3.10+**
+- **Linux** (or similar) with dependencies for Playwright Chromium
+- Network access to your Django **admin** URLs
+- Valid **Django admin** credentials (see secrets below)
+
+---
+
+## Quick start
 
 ```bash
-cd django_admin_automation
-bash scripts/bootstrap.sh
+cd django_admin_automation   # repository root
+bash scripts/bootstrap.sh      # venv, pip, Playwright Chromium
 source venv/bin/activate
+bash scripts/check_setup.sh    # optional sanity check
 ```
 
-**Security:** This repo is set up to **commit** `.secrets.env` and `.secrets.enc` so teammates can run Phase 2 after `git clone`. **Use a private GitHub repo only.** If it is ever public or exposed, **rotate all Django admin passwords immediately**.
+### Secrets (credentials)
 
-After clone, ensure `.secrets.env` exists in the repo (maintainer commits it) or copy from `.secrets.env.example` and fill values. Optional: commit `.secrets.enc` instead of plain `.secrets.env` (still sensitive). Session JSON files stay gitignored.
+Sensitive files are **gitignored** (`.secrets.env`, `.secrets.enc`, `.secrets.key`). Do not commit real credentials.
 
-**One command — install everything and run the full pipeline** (from project root):
+**Recommended — no plaintext passwords in `.secrets.env`:**
+
+1. Copy **`.secrets.env.example`** and follow the **encrypted** workflow: build a full `.secrets.env` once, run **`bash setup_secrets.sh`**, then remove plaintext passwords from `.secrets.env` (URLs-only is fine).
+2. Keep **`.secrets.key`** (one line = validation key) in the project root with **`chmod 600`**, **or** set **`SECRETS_DECRYPTION_KEY`** in the environment when running.
+3. The app and **`backend/scripts/lib_django_session.sh`** decrypt **`.secrets.enc`** when username/password are not already in the environment.
+
+Verify decrypt:
 
 ```bash
-cd CodingPracticeUpdations && git pull && bash scripts/run_pipeline.sh
+SECRETS_DECRYPTION_KEY="$(tr -d '\n\r' < .secrets.key)" bash scripts/verify_secrets_enc.sh
 ```
 
-If you use **only** `.secrets.enc` (no filled `.secrets.env`):
+Session cookie files (`beta_admin_session.json`, `prod_admin_session.json`) are local and gitignored; they refresh using the same credential sources.
 
-```bash
-cd CodingPracticeUpdations && SECRETS_DECRYPTION_KEY='your-validation-key' bash scripts/run_pipeline.sh
-```
+More detail: **[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)**
 
-**Manual steps** (same result): `bash scripts/bootstrap.sh` → `source venv/bin/activate` → `NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh`
+---
 
-If Phase 2 still fails, see **Diagnosis** in the error output or [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
-
-**Web UI (local):**
+## Web UI
 
 ```bash
 source venv/bin/activate
@@ -42,239 +63,137 @@ export FLASK_DEBUG=0
 python3 backend/api/server.py
 ```
 
-Open [http://localhost:5000](http://localhost:5000) — health check: [http://localhost:5000/health](http://localhost:5000/health).
+- Open **http://127.0.0.1:5000** (use `127.0.0.1`, not `0.0.0.0`, when testing from the same machine).
+- Health: **http://127.0.0.1:5000/health**
 
-**Production-style server (Gunicorn, same machine):**
+**Production-style (Gunicorn):**
 
 ```bash
-source venv/bin/activate
 ./run_production.sh
 ```
 
-**Run all formatters + all updaters at once (beta, no prompts):**
+See **[deployment/](deployment/)** for systemd / nginx samples.
+
+---
+
+## CLI — full pipeline
+
+From repository root, with venv activated:
 
 ```bash
-source venv/bin/activate
-NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
-```
-
-**Prod target:** use `DJANGO_TARGET_ENV=prod` instead of `beta`.
-
-**Skip testcase weightages only:** `SKIP_TESTCASES=1 NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh`
-
-### Run step by step (one command at a time)
-
-Set once per terminal:
-
-```bash
-cd django_admin_automation
-source venv/bin/activate
 export NON_INTERACTIVE=1
-export DJANGO_TARGET_ENV=beta
+export DJANGO_TARGET_ENV=beta   # or prod
+bash backend/scripts/run_full_pipeline.sh
 ```
 
-**Phase 1 — generate JSON (run in order):**
+- **Prod:** evaluation metrics and testcase weightage steps are **skipped** (by design in `run_full_pipeline.sh`).
+- Individual step failures are **logged and skipped** so later steps still run.
+
+**One-liner install + pipeline** (see also `scripts/run_pipeline.sh`):
 
 ```bash
-python3 generate_input_code_data.py
-python3 generate_input_desc.py
-python3 generate_input_metadata.py
-python3 generate_input_evaluation_metrics.py
-python3 generate_input_weightages.py
-python3 generate_input.py
-python3 generate_input_data.py
+bash scripts/run_pipeline.sh
 ```
 
-**Phase 2 — push to Django admin (run in order):**
+With encrypted secrets only:
 
 ```bash
-bash backend/scripts/run_code_updater.sh
-bash backend/scripts/run_hints_updater.sh
-bash backend/scripts/run_description_updater.sh
-bash backend/scripts/run_metadata_updater.sh
-bash backend/scripts/run_evaluation_metrics_updater.sh
-bash backend/scripts/run_weightage_updater.sh
-bash backend/scripts/run_loader.sh
+SECRETS_DECRYPTION_KEY='your-key' bash scripts/run_pipeline.sh
 ```
 
-Optional scripts **not** included in the full pipeline: `run_helper_updater.sh`, `run_base64_updater.sh`, `run_editorial_by_question_id.sh` — see [docs/COMMANDS.md](docs/COMMANDS.md).
+**Skip testcase weightages:** `SKIP_TESTCASES=1` with the same pipeline command.
 
-**Complete command reference:** [docs/COMMANDS.md](docs/COMMANDS.md)
+**Phase 1 — generators only** (run in order): `generate_input_code_data.py`, `generate_input_desc.py`, `generate_input_metadata.py`, `generate_input_evaluation_metrics.py`, `generate_input_weightages.py`, `generate_input.py`, `generate_input_data.py`.
 
-## What It Does
+**Phase 2 — admin updaters** (see `run_full_pipeline.sh` for exact list): `backend/scripts/run_*_updater.sh`, `run_loader.sh`.
 
-- Reads source input data and generates per-feature JSON files.
-- Opens Django admin pages and updates records automatically.
-- Supports beta/prod targets through environment variables.
-- Provides a Flask dashboard with:
-  - one-click pipeline runs,
-  - queued background jobs,
-  - live log streaming.
+Full command reference: **[docs/COMMANDS.md](docs/COMMANDS.md)**
 
-## Project Layout
+---
 
-- `backend/api/server.py` - Flask app, queue worker, pipeline API.
-- `backend/api/wsgi.py` - Gunicorn entrypoint.
-- `backend/scripts/run_full_pipeline.sh` - end-to-end formatter + updater run.
-- `backend/scripts/lib_django_session.sh` - shared env/session bootstrap.
-- `auto_*_updater.py` - Playwright admin updaters.
-- `generate_input_*.py` - JSON formatter/generator scripts.
-- `frontend/templates/` - dashboard UI templates.
-- `deployment/` - sample systemd, nginx, and env files.
-
-## Prerequisites
-
-- Linux server or workstation
-- Python 3.10+
-- Chromium dependencies required by Playwright
-- Access to target Django admin URLs
-- Valid credentials in `.secrets.env` (or working saved session files)
-
-## Local Setup
-
-- **Install / refresh dependencies:** `bash scripts/bootstrap.sh` then `source venv/bin/activate`
-- **Full checklist:** [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)
-- **All commands:** [docs/COMMANDS.md](docs/COMMANDS.md)
-
-Manual equivalent of bootstrap:
+## Extract coding questions (CLI)
 
 ```bash
-cd django_admin_automation
-python3 -m venv venv
-./venv/bin/pip install -r requirements.txt
-./venv/bin/playwright install chromium
+# input_extract_question.json: { "question_ids": [ "uuid", ... ] }
+python3 extract_and_convert_coding_question.py input_extract_question.json \
+  --raw-output extracted_coding_questions.json \
+  --output coding_questions_output.json
 ```
 
-Create `.secrets.env` in project root:
+Uses the same session/credentials as other updaters (`DJANGO_TARGET_ENV`, `.secrets.*`).
 
-```env
-BETA_DJANGO_ADMIN_USERNAME=...
-BETA_DJANGO_ADMIN_PASSWORD=...
-BETA_DJANGO_ADMIN_URL=https://<beta-host>/admin/
+---
 
-PROD_DJANGO_ADMIN_USERNAME=...
-PROD_DJANGO_ADMIN_PASSWORD=...
-PROD_DJANGO_ADMIN_URL=https://<prod-host>/admin/
-```
+## Project layout
 
-## Run Options
+| Path | Role |
+|------|------|
+| `backend/api/server.py` | Flask app, APIs, SSE, job queue |
+| `backend/api/wsgi.py` | Gunicorn entrypoint |
+| `backend/scripts/run_full_pipeline.sh` | End-to-end formatters + updaters |
+| `backend/scripts/lib_django_session.sh` | Session + `.secrets.env` / `.secrets.enc` handling |
+| `auto_*.py` | Playwright admin updaters |
+| `generate_input*.py` | JSON generators / formatters |
+| `extract_and_convert_coding_question.py` | Admin extract task + S3 download + convert |
+| `frontend/templates/` | Dashboard HTML (main, editorial, extract) |
+| `scripts/bootstrap.sh` | Install venv, requirements, Playwright |
+| `scripts/check_setup.sh` | Quick environment check |
+| `deployment/` | Example systemd, nginx, env |
 
-See **[docs/COMMANDS.md](docs/COMMANDS.md)** for every updater script, generators, and examples.
+---
 
-**Dashboard (dev):** `./venv/bin/python3 backend/api/server.py` → `http://localhost:5000`
+## Environment variables (common)
 
-**One updater (example — evaluation metrics):**
+| Variable | Purpose |
+|----------|---------|
+| `DJANGO_TARGET_ENV` | `beta` or `prod` for pipelines and extract (editorial UI is always beta). |
+| `NON_INTERACTIVE` | `1` — no prompts; needs credentials or decrypt key for session refresh. |
+| `SECRETS_DECRYPTION_KEY` | Passphrase for `.secrets.enc` when not using interactive decrypt. |
+| `SKIP_TESTCASES` | `1` — skip testcase weightage step in full pipeline. |
+| `EXTRACT_MAX_WAIT_SEC` | Optional longer wait for large extract batches. |
 
-```bash
-NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_evaluation_metrics_updater.sh input_evaluation_metrics.json
-```
+---
 
-**Full pipeline:**
+## Evaluation metrics admin path
 
-```bash
-NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_full_pipeline.sh
-```
-
-## Evaluation Metrics URL Path Note
-
-Different environments may register different Django admin model URLs.
-
-If evaluation metrics changelist returns 404, set:
-
-- `DJANGO_EVAL_METRICS_MODEL_PATH`
-- `DJANGO_EVAL_METRICS_MODEL_PATH_ALTERNATES`
-
-Example (beta in this project currently uses typo slug):
+If the metrics changelist **404**s, set in env or secrets:
 
 ```env
 DJANGO_EVAL_METRICS_MODEL_PATH=nkb_question/codingquestiontestcaseevalutionmetrics/
 ```
 
-## Production Deployment (UI Live)
+(Adjust if your Django admin URL slug differs.)
 
-Use Gunicorn + systemd + Nginx.
+---
 
-### 1) App host layout (recommended)
+## Concurrency (important)
 
-- Code: `/opt/django_admin_automation`
-- Venv: `/opt/django_admin_automation/venv`
-- Runtime env file: `/etc/django-admin-automation.env`
+Keep **Gunicorn workers at 1** for this app: in-process queue and SSE state do not span workers. Scale with **`GUNICORN_THREADS`** and **`PIPELINE_WORKERS`** instead. See **`gunicorn.conf.py`** and **`deployment/`**.
 
-### 2) Install and configure
-
-```bash
-cd /opt/django_admin_automation
-python3 -m venv venv
-./venv/bin/pip install -r requirements.txt
-./venv/bin/playwright install chromium
-```
-
-Set `/etc/django-admin-automation.env` from `deployment/env.example` and include at least:
-
-- `FLASK_SECRET_KEY`
-- `BIND`
-- `GUNICORN_THREADS`
-- `PIPELINE_WORKERS`
-- `DJANGO_TARGET_ENV`
-
-Keep `.secrets.env` in project root for admin credentials.
-
-### 3) Systemd service
-
-Copy and adjust `deployment/django-admin-automation.service` for your paths/user:
-
-```bash
-sudo cp deployment/django-admin-automation.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now django-admin-automation
-```
-
-### 4) Nginx reverse proxy
-
-Use `deployment/nginx-django-admin-automation.conf` as base, set your `server_name`, then:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/django-admin-automation.conf /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Add TLS (Let's Encrypt) for public access.
-
-## Important Concurrency Rule
-
-Keep Gunicorn workers at **1** for this app.
-
-Reason: queue/job state and log streaming are held in-process memory. Scale with:
-
-- `GUNICORN_THREADS`
-- `PIPELINE_WORKERS`
-
-Do not scale by increasing Gunicorn worker processes.
-
-## Health Check
-
-```bash
-curl http://127.0.0.1:5000/health
-```
-
-Expected JSON includes `"ok": true`.
+---
 
 ## Troubleshooting
 
-- **Admin 404 on updater**
-  - Verify `DJANGO_ADMIN_URL` host is exact.
-  - Configure model path env vars for that environment.
-- **Gets login page instead of changelist**
-  - Session expired; refresh session or verify credentials in `.secrets.env`.
-- **Pipeline run seems stuck**
-  - Check job logs in `sessions/`.
-  - Ensure Playwright browser install succeeded.
-- **Intermittent missing job/log updates in production**
-  - Confirm `GUNICORN_WORKERS=1`.
+| Symptom | What to check |
+|---------|----------------|
+| Login page instead of admin | Expired session; ensure `.secrets.enc` + `.secrets.key` or plaintext creds; delete stale `*_admin_session.json` if needed. |
+| Admin 404 | `DJANGO_ADMIN_URL` host and model paths (e.g. eval metrics). |
+| Playwright / Chromium errors | `bash scripts/bootstrap.sh`; on Linux, `playwright install-deps chromium` (may need `sudo`). |
+| Extract shows only a link | Use current `extract_and_convert_coding_question.py` — it follows `exception` URLs to fetch the real traceback. |
+| Pipeline “stuck” or empty UI logs | Thread pool / wrong bind address; use `127.0.0.1:5000`; see health endpoint. |
 
-## Security Notes
+---
 
-- **`.secrets.env` / `.secrets.enc` may be committed** for team convenience (private repo only). Session files remain local/gitignored.
-- Restrict dashboard access behind VPN/IP allow-list or authentication at proxy level.
-- If needed, use API token protection (`AUTOMATION_API_TOKEN`) as documented in `deployment/env.example`.
+## Security
+
+- Treat **`.secrets.key`** and **`.secrets.enc`** like passwords; never commit them to a public repo.
+- Restrict the dashboard (VPN, IP allow-list, or proxy auth). Optional: **`AUTOMATION_API_TOKEN`** — see **`deployment/env.example`**.
+- Rotate Django passwords if credentials or keys are ever exposed.
+
+---
+
+## Further reading
+
+- **[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)** — detailed local and team setup  
+- **[docs/COMMANDS.md](docs/COMMANDS.md)** — all scripts and options  
+- **`backend/README.md`** — short backend note  
