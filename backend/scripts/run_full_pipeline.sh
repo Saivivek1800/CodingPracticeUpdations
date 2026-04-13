@@ -3,6 +3,9 @@
 # Continues past individual step failures so later updaters still run.
 # Non-interactive: printf 'beta\n\n' | bash run_full_pipeline.sh
 #
+# Scope: Django admin updaters only (code, hints, description, metadata, metrics, weightages, loader).
+# Jupyter notebooks are separate: run ./run_helper_updater.sh or ./run_base64_updater.sh locally (not this script, not Gunicorn).
+#
 # Exit: 0 = all OK; 1 = some step failed (PIPELINE_SUMMARY); 2 = venv/Playwright missing (run scripts/bootstrap.sh).
 
 # Do not use set -e — we record failures and continue.

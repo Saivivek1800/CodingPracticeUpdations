@@ -5,7 +5,6 @@ env/
 
 # Decryption key — never commit (whoever has it can read .secrets.enc).
 # .secrets.env and .secrets.enc are NOT listed here so a private team repo may track them if you choose.
-.secrets.key
 
 # Playwright session cookies — local only, expire; recreated after login
 beta_admin_session.json

@@ -1,7 +1,10 @@
+"""Playwright driver for the base64 notebook: reads only input_base64.json (written by generate_base64_input.py)."""
 import json
+import os
+import re
 import sys
 import time
-import os
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 GOTO_TIMEOUT_MS = int(os.environ.get("JUPYTER_GOTO_TIMEOUT_MS", "60000"))
@@ -42,11 +45,89 @@ def wait_for_notebook_cells(page):
             continue
     raise TimeoutError(f"Notebook cells did not appear within {CELL_LOAD_TIMEOUT_MS}ms")
 
+
+def _notebook_code_cells(page):
+    loc = page.locator(".jp-Notebook .jp-CodeCell")
+    if loc.count() == 0:
+        loc = page.locator(".jp-CodeCell")
+    return loc
+
+
+def _cm_preview_text(cell_locator, timeout_ms: int = 3000) -> str:
+    ed = cell_locator.locator(".cm-content").first
+    if ed.count() == 0:
+        return (cell_locator.inner_text(timeout=timeout_ms) or "").strip()
+    try:
+        return (ed.inner_text(timeout=timeout_ms) or "").strip()
+    except Exception:
+        return ""
+
+
+def _find_base64_data_code_cell_index(page) -> int:
+    cells = _notebook_code_cells(page)
+    n = cells.count()
+    if n == 0:
+        pipeline_exception(
+            "notebook structure",
+            "No .jp-CodeCell found — is this JupyterLab / Notebook 7?",
+            1,
+        )
+    env_i = os.environ.get("JUPYTER_BASE64_DATA_CODE_CELL_INDEX")
+    if env_i is not None and str(env_i).isdigit():
+        return min(int(env_i), n - 1)
+    for i in range(min(n, 40)):
+        t = _cm_preview_text(cells.nth(i))
+        if t and re.search(r"\bquestion_code_repository_data\s*=", t):
+            print(f"Located `question_code_repository_data =` cell: code cell index {i}.")
+            return i
+    fb = min(5, n - 1)
+    print(
+        f"Warning: no cell matched `question_code_repository_data =`; using fallback index {fb}. "
+        "Set JUPYTER_BASE64_DATA_CODE_CELL_INDEX to override."
+    )
+    return fb
+
+
+def _find_base64_runner_code_cell_index(page, data_idx: int) -> int:
+    cells = _notebook_code_cells(page)
+    n = cells.count()
+    env_i = os.environ.get("JUPYTER_BASE64_RUNNER_CODE_CELL_INDEX")
+    if env_i is not None and str(env_i).isdigit():
+        return min(int(env_i), n - 1)
+    for i in range(min(n, 40)):
+        t = _cm_preview_text(cells.nth(i))
+        if t and "update_question_to_user_function_evaluation" in t:
+            print(f"Located base64 runner cell: code cell index {i}.")
+            return i
+    out = min(data_idx + 1, n - 1)
+    print(f"Using code cell index {out} for runner (next after data cell).")
+    return out
+
+
+def _replace_code_cell_editor(page, cells, cell_index: int, new_source: str) -> None:
+    editor = cells.nth(cell_index).locator(".cm-content").first
+    editor.wait_for(state="visible", timeout=20000)
+    editor.scroll_into_view_if_needed()
+    editor.click()
+    time.sleep(0.2)
+    page.keyboard.press("Control+a")
+    time.sleep(0.05)
+    page.keyboard.press("Backspace")
+    time.sleep(0.05)
+    chunk = 12000
+    for start in range(0, len(new_source), chunk):
+        page.keyboard.insert_text(new_source[start : start + chunk])
+        time.sleep(0.01)
+    time.sleep(0.2)
+
+
 def run_notebook(notebook_url, password):
-    print("\nReading data from input_base64.json...")
-    with open("input_base64.json", "r", encoding="utf-8") as f:
+    input_path = Path("input_base64.json").resolve()
+    print(f"\nReading base64 payload from this machine: {input_path}")
+    with open(input_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-        
+    _n = len(data) if isinstance(data, list) else 0
+    print(f"Loaded {_n} item(s); injecting into the remote notebook as `question_code_repository_data`.")
     payload = "question_code_repository_data = " + json.dumps(data, indent=4)
 
     with sync_playwright() as p:
@@ -87,26 +168,14 @@ def run_notebook(notebook_url, password):
                 1,
             )
             
-        print("Updating cell 6/7 and triggering a single restart-run-all...")
+        print("Locating base64 data / runner code cells and injecting from input_base64.json...")
         try:
-            # Click the 6th cell editor (index 5)
-            editor = page.locator(".jp-Cell").nth(5).locator(".cm-content")
-            editor.click()
-            
-            # Select all text and delete
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
-            
-            # Insert payload in cell 6
-            page.keyboard.insert_text(payload)
-
-            # Edit cell 7 before triggering run-all so we do only one kernel restart.
-            cell7 = page.locator(".jp-Cell").nth(6)
-            cell7.locator(".cm-content").click()
-            
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
-            page.keyboard.insert_text("print(update_question_to_user_function_evaluation(question_code_repository_data))")
+            cells = _notebook_code_cells(page)
+            data_i = _find_base64_data_code_cell_index(page)
+            _replace_code_cell_editor(page, cells, data_i, payload)
+            runner_i = _find_base64_runner_code_cell_index(page, data_i)
+            runner_src = "print(update_question_to_user_function_evaluation(question_code_repository_data))"
+            _replace_code_cell_editor(page, cells, runner_i, runner_src)
 
             print("Triggering Kernel Restart & Run All...")
             page.click("text='Kernel'")
@@ -116,18 +185,20 @@ def run_notebook(notebook_url, password):
             page.click("button.jp-Dialog-button.jp-mod-accept")
             
             print("Restart confirmed! Waiting for notebook to finish execution...")
-            
-            # Wait for cell 7's output area
-            output_locator = page.locator(".jp-Cell").nth(6).locator(".jp-OutputArea-output")
+            wait_for_notebook_cells(page)
+            cells = _notebook_code_cells(page)
+            data_i = _find_base64_data_code_cell_index(page)
+            runner_i = _find_base64_runner_code_cell_index(page, data_i)
+
+            output_locator = cells.nth(runner_i).locator(".jp-OutputArea-output")
             output_locator.first.wait_for(timeout=180000, state="attached")
 
-            cells = page.locator(".jp-Cell")
             count = cells.count()
             
             print("========================================")
-            print("NOTEBOOK EXECUTION RESULTS (CELL 7+):")
-            
-            for i in range(6, count):
+            print("NOTEBOOK EXECUTION RESULTS (code cells from data/runner onward):")
+            start_i = min(data_i, runner_i)
+            for i in range(start_i, count):
                 cell = cells.nth(i)
                 output_area = cell.locator(".jp-OutputArea-output")
                 
@@ -135,16 +206,21 @@ def run_notebook(notebook_url, password):
                     texts = output_area.all_inner_texts()
                     result = "\n".join(texts).strip()
                     if result:
-                        print(f"\n--- CELL {i+1} OUTPUT ---")
+                        print(f"\n--- CODE CELL {i + 1} OUTPUT ---")
                         print(result)
                 
                 # Check for errors
                 if cell.locator(".jp-RenderedError").count() > 0:
-                    print(f"\n⚠️ WARNING: Cell {i+1} returned an ERROR.")
+                    print(f"\n⚠️ WARNING: Code cell {i + 1} returned an ERROR.")
                     error_text = cell.locator(".jp-RenderedError").all_inner_texts()
                     print("\n".join(error_text))
             
             print("\n========================================")
+            print(
+                "Note: Output above is from the **remote** Jupyter kernel (server paths), not from skipping "
+                "your local JSON. Payload file on this PC:"
+            )
+            print(f"  {input_path}")
             print("✅ Successfully finished collecting outputs.")
                 
         except Exception as e:

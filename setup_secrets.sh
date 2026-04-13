@@ -1,6 +1,6 @@
 #!/bin/bash
-# Encrypt .secrets.env → .secrets.enc. You can then delete plain .secrets.env and use only
-# .secrets.enc + .secrets.key (or SECRETS_DECRYPTION_KEY). See .secrets.env.example.
+# Encrypt the whole .secrets.env → .secrets.enc (Django admin creds, Jupyter passwords, anything in that file).
+# Then use .secrets.enc + .secrets.key (or SECRETS_DECRYPTION_KEY). See .secrets.env.example.
 
 SECRETS_FILE=".secrets.env"
 ENCRYPTED_FILE=".secrets.enc"

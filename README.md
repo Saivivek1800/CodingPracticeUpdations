@@ -37,6 +37,8 @@ bash scripts/check_setup.sh    # optional sanity check
 
 **Credentials:** With **`.secrets.enc`**, place **`.secrets.key`** (one line, same passphrase as `setup_secrets.sh`) in the project root, **or** add **`SECRETS_DECRYPTION_KEY=...`** to **`.secrets.env`**. **`./run_production.sh`** sources `.secrets.env` and then reads `.secrets.key` if the variable is still empty — no manual `export` required. The Flask app also loads these on startup when imported. A clone with only `.secrets.enc` and URL-only `.secrets.env` is still not enough without one of those keys.
 
+**Jupyter (`BETA_JUPYTER_PASSWORD`, …):** Used only by **`./run_helper_updater.sh`** and **`./run_base64_updater.sh`**. **`NON_INTERACTIVE=1`** without credentials runs **generator JSON only** (no Playwright) and exits 0, with a loud banner; use **`REQUIRE_JUPYTER=1`** to fail instead. **`SKIP_JUPYTER=1`** / **`JUPYTER_GEN_ONLY=1`** also mean JSON-only. Optional in **`.secrets.env`**: **`JUPYTER_PASSWORD=`** as an alias for the beta notebook password if **`BETA_JUPYTER_PASSWORD=`** is unset.
+
 **Why Phase 2 works on your laptop but fails after `git clone`:** `beta_admin_session.json` (Playwright cookies) is **gitignored**. If you have that file locally, admin updates can run **without** passwords in `.secrets.env`. New clones do not get that file — teammates must add **username/password** (or encrypted secrets + **`.secrets.key`**) or copy a valid session file into the project root. Check **`GET /health`** → **`phase2_django_auth`** before running the full pipeline from the UI.
 
 ### Secrets (credentials)

@@ -202,8 +202,8 @@ Use root wrappers (`./run_*.sh`) or call `backend/scripts/` directly. Pass `NON_
 | `backend/scripts/run_evaluation_metrics_updater.sh` | Evaluation metrics (optional file arg, default `input_evaluation_metrics.json`) |
 | `backend/scripts/run_weightage_updater.sh` | Weightages |
 | `backend/scripts/run_loader.sh` | Testcases / loader |
-| `backend/scripts/run_helper_updater.sh` | Helper content |
-| `backend/scripts/run_base64_updater.sh` | Base64-related flow |
+| `backend/scripts/run_helper_updater.sh` | Helper content (Jupyter — local/VPN only, not full pipeline / prod app) |
+| `backend/scripts/run_base64_updater.sh` | Base64 Jupyter flow (same — standalone from pipeline / Gunicorn) |
 | `backend/scripts/run_editorial_by_question_id.sh` | Editorial by question id |
 
 **Examples:**
@@ -216,13 +216,15 @@ NON_INTERACTIVE=1 DJANGO_TARGET_ENV=beta bash backend/scripts/run_editorial_by_q
 
 Root-level `run_*.sh` files forward to `backend/scripts/` with the same name.
 
-**Not part of `run_full_pipeline.sh`** (run only when you need them):
+**Not part of `run_full_pipeline.sh` or production Gunicorn** (run locally when you need Jupyter):
 
 ```bash
 bash backend/scripts/run_helper_updater.sh
 bash backend/scripts/run_base64_updater.sh
 bash backend/scripts/run_editorial_by_question_id.sh
 ```
+
+Helper/base64: **`NON_INTERACTIVE=1`** without credentials runs **generator JSON only** (exit 0, banner); **`REQUIRE_JUPYTER=1`** fails instead. **`SKIP_JUPYTER=1`** / **`JUPYTER_GEN_ONLY=1`** also skip Playwright. For the notebook, set **`BETA_JUPYTER_PASSWORD=`** or **`JUPYTER_PASSWORD=`** (beta alias) or decrypt **`.secrets.enc`**.
 
 ---
 

@@ -1,7 +1,9 @@
 import json
+import os
+import re
 import sys
 import time
-import os
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 GOTO_TIMEOUT_MS = int(os.environ.get("JUPYTER_GOTO_TIMEOUT_MS", "60000"))
@@ -43,12 +45,94 @@ def wait_for_notebook_cells(page):
             continue
     raise TimeoutError(f"Notebook cells did not appear within {CELL_LOAD_TIMEOUT_MS}ms")
 
+
+def _notebook_code_cells(page):
+    """Code cells only — .jp-Cell includes markdown/output and breaks nth() indexing."""
+    loc = page.locator(".jp-Notebook .jp-CodeCell")
+    if loc.count() == 0:
+        loc = page.locator(".jp-CodeCell")
+    return loc
+
+
+def _cm_preview_text(cell_locator, timeout_ms: int = 3000) -> str:
+    ed = cell_locator.locator(".cm-content").first
+    if ed.count() == 0:
+        return (cell_locator.inner_text(timeout=timeout_ms) or "").strip()
+    try:
+        return (ed.inner_text(timeout=timeout_ms) or "").strip()
+    except Exception:
+        return ""
+
+
+def _find_helper_data_code_cell_index(page) -> int:
+    cells = _notebook_code_cells(page)
+    n = cells.count()
+    if n == 0:
+        pipeline_exception(
+            "notebook structure",
+            "No .jp-CodeCell found — is this JupyterLab / Notebook 7?",
+            1,
+        )
+    env_i = os.environ.get("JUPYTER_HELPER_DATA_CODE_CELL_INDEX")
+    if env_i is not None and str(env_i).isdigit():
+        return min(int(env_i), n - 1)
+    for i in range(min(n, 40)):
+        t = _cm_preview_text(cells.nth(i))
+        if t and re.search(r"\bdata\s*=", t):
+            print(f"Located `data =` payload cell: code cell index {i} (0-based).")
+            return i
+    # 1-based "cell 6" in the notebook = 0-based index 5 among code cells only.
+    fallback = min(5, n - 1)
+    print(
+        f"Warning: no cell matched `data =` in first {min(n, 40)} code cells; "
+        f"using fallback code cell index {fallback} (notebook cell 6, 1-based). "
+        "Set JUPYTER_HELPER_DATA_CODE_CELL_INDEX to override."
+    )
+    return fallback
+
+
+def _find_helper_output_code_cell_index(page, data_idx: int) -> int:
+    cells = _notebook_code_cells(page)
+    n = cells.count()
+    env_i = os.environ.get("JUPYTER_HELPER_OUTPUT_CODE_CELL_INDEX")
+    if env_i is not None and str(env_i).isdigit():
+        return min(int(env_i), n - 1)
+    for i in range(data_idx + 1, min(n, 40)):
+        t = _cm_preview_text(cells.nth(i))
+        if t and "add_debug_helper_code" in t:
+            print(f"Located helper runner cell: code cell index {i}.")
+            return i
+    out = min(data_idx + 1, n - 1)
+    print(f"Using code cell index {out} for output (next after data cell).")
+    return out
+
+
+def _replace_code_cell_editor(page, cells, cell_index: int, new_source: str) -> None:
+    editor = cells.nth(cell_index).locator(".cm-content").first
+    editor.wait_for(state="visible", timeout=20000)
+    editor.scroll_into_view_if_needed()
+    editor.click()
+    time.sleep(0.2)
+    page.keyboard.press("Control+a")
+    time.sleep(0.05)
+    page.keyboard.press("Backspace")
+    time.sleep(0.05)
+    # Large payloads: insert in chunks (insert_text is reliable but can be slow)
+    chunk = 12000
+    for start in range(0, len(new_source), chunk):
+        page.keyboard.insert_text(new_source[start : start + chunk])
+        time.sleep(0.01)
+    time.sleep(0.2)
+
+
 def run_notebook(notebook_url, password):
-    print("\nReading data from input_helper.json...")
-    with open("input_helper.json", "r", encoding="utf-8") as f:
+    input_path = Path("input_helper.json").resolve()
+    print(f"\nReading helper payload from this machine: {input_path}")
+    with open(input_path, "r", encoding="utf-8") as f:
         data_list = json.load(f)
-        
-    # The debugers.ipynb needs variable 'data' set to the payload
+    _n = len(data_list) if isinstance(data_list, list) else 0
+    print(f"Loaded {_n} item(s); injecting into the remote notebook as Python variable `data` (code cell with `data =`).")
+    # LoadHelperCode_to_FunctionBased.ipynb (beta default) expects variable 'data' set to the payload
     # The payload is already a list in input_helper.json
     payload = "data = " + json.dumps(data_list, indent=4)
 
@@ -90,23 +174,12 @@ def run_notebook(notebook_url, password):
                 1,
             )
             
-        print("Selecting cell 7 and injecting payload...")
+        print("Selecting code cell with `data =` and injecting payload from JSON...")
         try:
-            # Click the 7th cell editor (index 6)
-            # In debugers.ipynb:
-            # Cell index 0-3: setup
-            # Cell index 4: helper functions
-            # Cell index 6: data = [...]
-            # Cell index 7: add_debug_helper_code(data) - produces output
-            editor = page.locator(".jp-Cell").nth(6).locator(".cm-content")
-            editor.click()
-            
-            # Select all text and delete
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
-            
-            # Insert the payload
-            page.keyboard.insert_text(payload)
+            cells = _notebook_code_cells(page)
+            data_cell_i = _find_helper_data_code_cell_index(page)
+            _replace_code_cell_editor(page, cells, data_cell_i, payload)
+            output_cell_i = _find_helper_output_code_cell_index(page, data_cell_i)
             
             print("Triggering Kernel Restart & Run All...")
             # Click the Kernel menu
@@ -129,11 +202,17 @@ def run_notebook(notebook_url, password):
                 1,
             )
             
-        # WAIT FOR CELL 8 TO OUTPUT SUCCESS OR FAILURE
+        # WAIT FOR OUTPUT CODE CELL (DOM reloads after restart — wait then re-resolve indices)
         try:
-            print("Monitoring Cell 8 for the execution result (this might take up to 2 minutes depending on the script)...")
-            # Cell index 7 is the 8th cell. We want to wait until it produces an output area
-            output_locator = page.locator(".jp-Cell").nth(7).locator(".jp-OutputArea-output")
+            wait_for_notebook_cells(page)
+            cells = _notebook_code_cells(page)
+            data_cell_i = _find_helper_data_code_cell_index(page)
+            output_cell_i = _find_helper_output_code_cell_index(page, data_cell_i)
+            print(
+                f"Monitoring code cell {output_cell_i + 1} (0-based index {output_cell_i}) for execution result "
+                "(this might take up to 2 minutes depending on the script)..."
+            )
+            output_locator = cells.nth(output_cell_i).locator(".jp-OutputArea-output")
             
             # We will afford 120 seconds for the notebook logic to finish processing
             output_locator.first.wait_for(timeout=120000, state="attached")
@@ -143,13 +222,17 @@ def run_notebook(notebook_url, password):
             result_str = "\n".join(output_text).strip()
             
             print("========================================")
-            print("CELL 8 EXECUTION RESULT:")
+            print("HELPER NOTEBOOK EXECUTION RESULT:")
             print(result_str if result_str else "No text output returned, it might be an empty output or an object.")
             print("========================================")
+            print(
+                "Note: Lines above are printed by the **remote** Jupyter kernel (paths like /home/ubuntu/... are on the "
+                "notebook server). Your `data` still came from this PC:"
+            )
+            print(f"  {input_path}")
             
-            # Additional check: Did cell 8 have an error traceback?
-            if page.locator(".jp-Cell").nth(7).locator(".jp-RenderedError").count() > 0:
-                print("⚠️ WARNING: Cell 8 returned an ERROR.")
+            if cells.nth(output_cell_i).locator(".jp-RenderedError").count() > 0:
+                print("⚠️ WARNING: Output code cell returned an ERROR.")
             else:
                 print("✅ Successfully finished executing script.")
                 

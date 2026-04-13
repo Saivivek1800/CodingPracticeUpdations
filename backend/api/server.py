@@ -304,6 +304,8 @@ def _merge_project_secrets_env_into(env: dict) -> None:
                 if not (
                     k.startswith("BETA_DJANGO_")
                     or k.startswith("PROD_DJANGO_")
+                    or k.startswith("BETA_JUPYTER_")
+                    or k.startswith("PROD_JUPYTER_")
                     or k.startswith("DJANGO_EVAL_")
                 ):
                     continue
@@ -336,16 +338,7 @@ def _inject_secrets_decryption_key(env: dict) -> None:
 
 
 def _decrypt_secrets_enc_into_env(env: dict) -> None:
-    """If creds for the target env are still missing, decrypt project .secrets.enc with SECRETS_DECRYPTION_KEY (same as lib_django_session.sh)."""
-    t = (env.get("DJANGO_TARGET_ENV") or "beta").strip().lower()
-    if t == "prod":
-        u = str(env.get("PROD_DJANGO_ADMIN_USERNAME", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
-        p = str(env.get("PROD_DJANGO_ADMIN_PASSWORD", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
-    else:
-        u = str(env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
-        p = str(env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
-    if u and p:
-        return
+    """Decrypt .secrets.enc when SECRETS_DECRYPTION_KEY is set; merge missing Django + Jupyter + eval keys."""
     key = str(env.get("SECRETS_DECRYPTION_KEY", "")).strip()
     if not key:
         return
@@ -377,6 +370,10 @@ def _decrypt_secrets_enc_into_env(env: dict) -> None:
                 continue
             k, v = parsed
             if k.startswith("BETA_DJANGO_") or k.startswith("PROD_DJANGO_") or k.startswith("DJANGO_EVAL_"):
+                if not str(env.get(k, "")).strip():
+                    env[k] = v
+                continue
+            if k.startswith("BETA_JUPYTER_") or k.startswith("PROD_JUPYTER_"):
                 if not str(env.get(k, "")).strip():
                     env[k] = v
     except (OSError, subprocess.SubprocessError, ValueError):
@@ -484,8 +481,11 @@ def _pipeline_worker():
             run_env["DJANGO_TARGET_ENV"] = django_target_env
             _prepare_django_child_env(run_env)
             if skip_jupyter:
-                run_env["SKIP_JUPYTER"] = "1"
-                _job_append(job_id, ">>> NOTE: SKIP_JUPYTER=1 enabled for this job.")
+                _job_append(
+                    job_id,
+                    ">>> NOTE: skip_jupyter in request — run_full_pipeline.sh only runs Django admin updaters; "
+                    "Jupyter helper/base64 are separate scripts (./run_helper_updater.sh, ./run_base64_updater.sh).",
+                )
             if skip_testcases:
                 run_env["SKIP_TESTCASES"] = "1"
                 _job_append(job_id, ">>> NOTE: SKIP_TESTCASES=1 enabled for this job.")
