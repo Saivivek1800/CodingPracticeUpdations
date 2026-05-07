@@ -28,7 +28,13 @@ from urllib.parse import quote, urljoin
 
 from playwright.sync_api import sync_playwright
 
-from admin_playwright_util import chromium_launch_args, goto_or_fail, new_admin_browser_context
+from admin_playwright_util import (
+    chromium_launch_args,
+    django_admin_can_relogin_or_session,
+    django_admin_login_credentials,
+    goto_or_fail,
+    new_admin_browser_context,
+)
 
 ADMIN_URL = os.environ.get("DJANGO_ADMIN_URL", "https://nkb-backend-ccbp-beta.earlywave.in/admin/")
 if not ADMIN_URL.endswith("/"):
@@ -39,8 +45,6 @@ QUESTION_CHANGE_URL_TEMPLATE = ADMIN_URL + "nkb_question/question/{}/change/"
 LEARNING_RESOURCE_CHANGE_URL_TEMPLATE = ADMIN_URL + "nkb_learning_resource/learningresource/{}/change/"
 
 SESSION_FILE = os.environ.get("SESSION_FILE", "admin_session.json")
-USERNAME = os.environ.get("DJANGO_ADMIN_USERNAME")
-PASSWORD = os.environ.get("DJANGO_ADMIN_PASSWORD")
 ADMIN_READY_TIMEOUT_MS = int(os.environ.get("DJANGO_ADMIN_READY_TIMEOUT_MS", "12000"))
 
 # Admin URLs: .../learningresource/<pk>/... — PK may be integer or UUID (see guided step "Learning resource id").
@@ -637,6 +641,14 @@ def run_editorial_by_question_id(json_file: str) -> int:
         print(f"Error: {e}", flush=True)
         return 1
 
+    if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+        print(
+            f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+            "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
+            flush=True,
+        )
+        return 1
+
     ok = 0
     failed = 0
     updated_qids: list[str] = []
@@ -650,15 +662,25 @@ def run_editorial_by_question_id(json_file: str) -> int:
         try:
             goto_or_fail(page, ADMIN_URL, script="auto_editorial_by_question_id.py")
             if "Log out" not in page.content():
-                if USERNAME and PASSWORD:
+                user, pwd = django_admin_login_credentials(ADMIN_URL)
+                if user and pwd:
                     print("Logging in...", flush=True)
-                    page.fill("#id_username", USERNAME)
-                    page.fill("#id_password", PASSWORD)
+                    page.fill("#id_username", user)
+                    page.fill("#id_password", pwd)
                     page.click("input[type='submit']")
                     page.wait_for_load_state("networkidle")
                     context.storage_state(path=SESSION_FILE)
                 else:
-                    print("Session expired and no credentials provided.", flush=True)
+                    print(
+                        "Session expired and no credentials provided (DJANGO_ADMIN_USERNAME/PASSWORD empty).",
+                        flush=True,
+                    )
+                    print(
+                        "  Fix: add BETA_DJANGO_ADMIN_USERNAME and BETA_DJANGO_ADMIN_PASSWORD to project-root "
+                        ".secrets.env, or DJANGO_ADMIN_* / SECRETS_DECRYPTION_KEY + .secrets.enc. "
+                        "If you use the web UI, restart the Flask server after changing secrets.",
+                        flush=True,
+                    )
                     return 1
 
             for qid, content in items.items():

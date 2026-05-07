@@ -24,6 +24,13 @@ if [ -f ".secrets.env" ]; then
     source .secrets.env 2>/dev/null
     set +a
 fi
+# Local overrides (gitignored *.local.env) — e.g. PROD_DJANGO_ADMIN_* without editing .secrets.env
+if [ -f "secrets.local.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source secrets.local.env 2>/dev/null || true
+    set +a
+fi
 export BETA_DJANGO_ADMIN_USERNAME="${BETA_DJANGO_ADMIN_USERNAME:-$_IN_BU}"
 export BETA_DJANGO_ADMIN_PASSWORD="${BETA_DJANGO_ADMIN_PASSWORD:-$_IN_BP}"
 export BETA_DJANGO_ADMIN_URL="${BETA_DJANGO_ADMIN_URL:-$_IN_BL}"
@@ -86,10 +93,16 @@ if [ -f ".secrets.enc" ]; then
     if [ "$USE_SESSION" != "true" ]; then
         RUN_SECRETS_DECRYPT=true
     else
+        # Re-login needs user+password. If one field is only in .secrets.enc, we must still decrypt
+        # (old logic only ran decrypt when *username* was empty).
         if [[ "$ENV_CHOICE" == "prod" ]]; then
-            [ -z "${PROD_W_U:-}" ] && [ -z "${BETA_W_U:-}" ] && RUN_SECRETS_DECRYPT=true
+            if { [ -z "${PROD_W_U:-}" ] && [ -z "${BETA_W_U:-}" ]; } || { [ -z "${PROD_W_P:-}" ] && [ -z "${BETA_W_P:-}" ]; }; then
+                RUN_SECRETS_DECRYPT=true
+            fi
         else
-            [ -z "${BETA_W_U:-}" ] && RUN_SECRETS_DECRYPT=true
+            if [ -z "${BETA_W_U:-}" ] || [ -z "${BETA_W_P:-}" ]; then
+                RUN_SECRETS_DECRYPT=true
+            fi
         fi
     fi
 fi
@@ -139,19 +152,21 @@ if [ "$RUN_SECRETS_DECRYPT" = "true" ]; then
     fi
 fi
 
-# Same credential sources as all other updaters (always export for Python child processes)
+# Same credential sources as all other updaters (always export for Python child processes).
+# Prefer BETA_/PROD_* from decrypt/.secrets.env; else keep DJANGO_ADMIN_* already set by sourcing
+# .secrets.env or by the parent (e.g. Flask _prepare_django_child_env); else pre-source _IN_*.
+# (Plain BETA_W_U= would otherwise wipe DJANGO_ADMIN_* from the file/parent — breaks re-login when session expires.)
 if [[ "$ENV_CHOICE" == "prod" ]]; then
-    export DJANGO_ADMIN_USERNAME="${PROD_W_U:-$BETA_W_U}"
-    export DJANGO_ADMIN_PASSWORD="${PROD_W_P:-$BETA_W_P}"
-    export DJANGO_ADMIN_URL="${PROD_W_L:-$PROD_ADMIN_URL}"
+    export DJANGO_ADMIN_USERNAME="${PROD_W_U:-${BETA_W_U:-${DJANGO_ADMIN_USERNAME:-$_IN_DJU}}}"
+    export DJANGO_ADMIN_PASSWORD="${PROD_W_P:-${BETA_W_P:-${DJANGO_ADMIN_PASSWORD:-$_IN_DJP}}}"
+    export DJANGO_ADMIN_URL="${PROD_W_L:-${DJANGO_ADMIN_URL:-$_IN_DJL}}"
+    export DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL:-$PROD_ADMIN_URL}"
 else
-    export DJANGO_ADMIN_USERNAME="${BETA_W_U}"
-    export DJANGO_ADMIN_PASSWORD="${BETA_W_P}"
-    export DJANGO_ADMIN_URL="${BETA_W_L:-$BETA_ADMIN_URL}"
+    export DJANGO_ADMIN_USERNAME="${BETA_W_U:-${DJANGO_ADMIN_USERNAME:-$_IN_DJU}}"
+    export DJANGO_ADMIN_PASSWORD="${BETA_W_P:-${DJANGO_ADMIN_PASSWORD:-$_IN_DJP}}"
+    export DJANGO_ADMIN_URL="${BETA_W_L:-${DJANGO_ADMIN_URL:-$_IN_DJL}}"
+    export DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL:-$BETA_ADMIN_URL}"
 fi
-export DJANGO_ADMIN_USERNAME="${DJANGO_ADMIN_USERNAME:-$_IN_DJU}"
-export DJANGO_ADMIN_PASSWORD="${DJANGO_ADMIN_PASSWORD:-$_IN_DJP}"
-export DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL:-$_IN_DJL}"
 
 # Re-login when storage_state expires: need plaintext creds or decrypted .secrets.enc
 if [ "$USE_SESSION" = "true" ]; then

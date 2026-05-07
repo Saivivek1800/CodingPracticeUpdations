@@ -8,6 +8,8 @@ from playwright.sync_api import sync_playwright
 
 from admin_playwright_util import (
     chromium_launch_args,
+    django_admin_can_relogin_or_session,
+    django_admin_login_credentials,
     goto_or_fail,
     new_admin_browser_context,
 )
@@ -18,8 +20,6 @@ if not ADMIN_URL.endswith("/"):
 
 HINT_LIST_URL = ADMIN_URL + "nkb_question/codingquestionhint/"
 SESSION_FILE = os.environ.get("SESSION_FILE", "admin_session.json")
-USERNAME = os.environ.get("DJANGO_ADMIN_USERNAME")
-PASSWORD = os.environ.get("DJANGO_ADMIN_PASSWORD")
 
 
 def extract_question_hints(payload):
@@ -151,6 +151,14 @@ def run_hints_updater(input_json_file):
         print("No questions with hints found in input JSON.")
         return 0
 
+    if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+        print(
+            f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+            "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
+            flush=True,
+        )
+        return 1
+
     with sync_playwright() as p:
         browser = p.chromium.launch(**chromium_launch_args())
         context = new_admin_browser_context(browser, SESSION_FILE)
@@ -158,10 +166,11 @@ def run_hints_updater(input_json_file):
         try:
             goto_or_fail(page, ADMIN_URL, script="auto_hints_updater.py")
             if "Log out" not in page.content():
-                if USERNAME and PASSWORD:
+                user, pwd = django_admin_login_credentials(ADMIN_URL)
+                if user and pwd:
                     print("Logging in...")
-                    page.fill("#id_username", USERNAME)
-                    page.fill("#id_password", PASSWORD)
+                    page.fill("#id_username", user)
+                    page.fill("#id_password", pwd)
                     page.click("input[type='submit']")
                     page.wait_for_load_state("networkidle")
                     context.storage_state(path=SESSION_FILE)

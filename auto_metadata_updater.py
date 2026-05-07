@@ -7,6 +7,8 @@ from playwright.sync_api import sync_playwright
 
 from admin_playwright_util import (
     chromium_launch_args,
+    django_admin_can_relogin_or_session,
+    django_admin_login_credentials,
     goto_or_fail,
     new_admin_browser_context,
 )
@@ -15,15 +17,15 @@ ADMIN_URL = os.environ.get("DJANGO_ADMIN_URL", "https://nkb-backend-ccbp-beta.ea
 if not ADMIN_URL.endswith('/'):
     ADMIN_URL += '/'
 QUESTION_CHANGE_URL_TEMPLATE = ADMIN_URL + "nkb_question/question/{}/change/"
-USERNAME = os.environ.get("DJANGO_ADMIN_USERNAME")
-PASSWORD = os.environ.get("DJANGO_ADMIN_PASSWORD")
-
 SESSION_FILE = os.environ.get("SESSION_FILE", "admin_session.json")
 
-if not USERNAME or not PASSWORD:
-    if not os.path.exists(SESSION_FILE):
-        print(f"Error: DJANGO_ADMIN_USERNAME and DJANGO_ADMIN_PASSWORD environment variables must be set (no {SESSION_FILE} found).")
-        exit(1)
+if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+    print(
+        f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+        "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
+        flush=True,
+    )
+    sys.exit(1)
 
 def run_metadata_updater(json_file):
     if not os.path.exists(json_file):
@@ -54,9 +56,10 @@ def run_metadata_updater(json_file):
 
         if "Log out" not in page.content():
             print("Logging in...")
-            if USERNAME and PASSWORD:
-                page.fill("#id_username", USERNAME)
-                page.fill("#id_password", PASSWORD)
+            user, pwd = django_admin_login_credentials(ADMIN_URL)
+            if user and pwd:
+                page.fill("#id_username", user)
+                page.fill("#id_password", pwd)
                 page.click("input[type='submit']")
                 page.wait_for_load_state("networkidle")
                 context.storage_state(path=SESSION_FILE)

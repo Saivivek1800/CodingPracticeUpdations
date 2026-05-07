@@ -4,21 +4,29 @@ import argparse
 import json
 from playwright.sync_api import sync_playwright
 
+from admin_playwright_util import django_admin_can_relogin_or_session, django_admin_login_credentials
+
 ADMIN_URL = os.environ.get("DJANGO_ADMIN_URL", "https://nkb-backend-ccbp-beta.earlywave.in/admin/")
 if not ADMIN_URL.endswith('/'):
     ADMIN_URL += '/'
 LEARNING_RESOURCE_CHANGE_URL_TEMPLATE = ADMIN_URL + "nkb_learning_resource/learningresource/{}/change/"
-USERNAME = os.environ.get("DJANGO_ADMIN_USERNAME")
-PASSWORD = os.environ.get("DJANGO_ADMIN_PASSWORD")
 
 SESSION_FILE = os.environ.get("SESSION_FILE", "admin_session.json")
 
-if not USERNAME or not PASSWORD:
-    if not os.path.exists(SESSION_FILE):
-        print(f"Error: DJANGO_ADMIN_USERNAME and DJANGO_ADMIN_PASSWORD environment variables must be set (no {SESSION_FILE} found).")
-        exit(1)
+
+def _require_login_or_session() -> None:
+    if django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+        return
+    print(
+        f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+        "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
+        flush=True,
+    )
+    raise SystemExit(1)
 
 def run_editorial_updater(json_file):
+    _require_login_or_session()
+
     if not os.path.exists(json_file):
         print(f"Error: {json_file} not found.")
         return
@@ -61,14 +69,20 @@ def run_editorial_updater(json_file):
         if "Log out" not in page.content():
             print(f"Current URL: {page.url}")
             print("Logging in...")
-            if USERNAME and PASSWORD:
-                page.fill("#id_username", USERNAME)
-                page.fill("#id_password", PASSWORD)
+            user, pwd = django_admin_login_credentials(ADMIN_URL)
+            if user and pwd:
+                page.fill("#id_username", user)
+                page.fill("#id_password", pwd)
                 page.click("input[type='submit']")
                 page.wait_for_load_state("networkidle")
                 context.storage_state(path=SESSION_FILE)
             else:
-                print("Error: Not logged in and no credentials provided to login. Please provide credentials or a valid session file.")
+                print(
+                    "Error: Session expired and no credentials for re-login. "
+                    "Add PROD_DJANGO_ADMIN_USERNAME/PASSWORD (prod) or BETA_* (beta) to .secrets.env, "
+                    "or set SECRETS_DECRYPTION_KEY / .secrets.key for .secrets.enc.",
+                    flush=True,
+                )
                 browser.close()
                 return
 

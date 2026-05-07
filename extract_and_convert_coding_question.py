@@ -6,7 +6,13 @@ import time
 import requests
 from playwright.sync_api import sync_playwright
 
-from admin_playwright_util import chromium_launch_args, goto_or_fail, new_admin_browser_context
+from admin_playwright_util import (
+    chromium_launch_args,
+    django_admin_can_relogin_or_session,
+    django_admin_login_credentials,
+    goto_or_fail,
+    new_admin_browser_context,
+)
 from convert_extracted_to_coding_json import convert
 
 
@@ -16,8 +22,12 @@ if not ADMIN_URL.endswith("/"):
 
 CONTENT_LOADING_URL = ADMIN_URL + "nkb_load_data/contentloading/add/"
 SESSION_FILE = os.environ.get("SESSION_FILE", "beta_admin_session.json")
-USERNAME = os.environ.get("DJANGO_ADMIN_USERNAME")
-PASSWORD = os.environ.get("DJANGO_ADMIN_PASSWORD")
+
+if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+    raise SystemExit(
+        f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+        "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env (gitignored *.local.env)."
+    )
 
 
 def _max_wait_seconds_for_payload(payload: dict) -> int:
@@ -243,9 +253,10 @@ def run(input_file: str, raw_output_file: str, converted_output_file: str) -> No
             pass
 
         if not _page_looks_logged_in(page):
-            if USERNAME and PASSWORD:
-                page.fill("#id_username", USERNAME)
-                page.fill("#id_password", PASSWORD)
+            user, pwd = django_admin_login_credentials(ADMIN_URL)
+            if user and pwd:
+                page.fill("#id_username", user)
+                page.fill("#id_password", pwd)
                 page.click("input[type='submit']")
                 page.wait_for_load_state("networkidle")
                 context.storage_state(path=SESSION_FILE)

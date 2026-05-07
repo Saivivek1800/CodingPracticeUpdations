@@ -283,9 +283,8 @@ def _parse_secrets_env_line(line: str):
     return key, value
 
 
-def _merge_project_secrets_env_into(env: dict) -> None:
-    """Load BETA_/PROD_/DJANGO_* from project .secrets.env when the server process never sourced it."""
-    path = os.path.join(BASE_DIR, ".secrets.env")
+def _merge_secrets_file_into(env: dict, path: str) -> None:
+    """Merge known secret keys from a single env file into env (only if target slot is empty)."""
     if not os.path.isfile(path):
         return
     try:
@@ -295,8 +294,6 @@ def _merge_project_secrets_env_into(env: dict) -> None:
                 if not parsed:
                     continue
                 k, v = parsed
-                # Allow decryption key from .secrets.env so teammates need only one file (with .secrets.enc),
-                # without a separate .secrets.key or systemd env. Never commit real values to a public repo.
                 if k in ("SECRETS_DECRYPTION_KEY", "SECRETS_DECRYPTION_KEY_FILE"):
                     if str(v).strip() and not str(env.get(k, "")).strip():
                         env[k] = v.strip()
@@ -307,12 +304,19 @@ def _merge_project_secrets_env_into(env: dict) -> None:
                     or k.startswith("BETA_JUPYTER_")
                     or k.startswith("PROD_JUPYTER_")
                     or k.startswith("DJANGO_EVAL_")
+                    or k in ("DJANGO_ADMIN_USERNAME", "DJANGO_ADMIN_PASSWORD", "DJANGO_ADMIN_URL")
                 ):
                     continue
                 if not str(env.get(k, "")).strip():
                     env[k] = v
     except OSError:
         pass
+
+
+def _merge_project_secrets_env_into(env: dict) -> None:
+    """Load BETA_/PROD_/DJANGO_* from project .secrets.env and optional secrets.local.env (gitignored)."""
+    _merge_secrets_file_into(env, os.path.join(BASE_DIR, ".secrets.env"))
+    _merge_secrets_file_into(env, os.path.join(BASE_DIR, "secrets.local.env"))
 
 
 def _inject_secrets_decryption_key(env: dict) -> None:
@@ -369,7 +373,12 @@ def _decrypt_secrets_enc_into_env(env: dict) -> None:
             if not parsed:
                 continue
             k, v = parsed
-            if k.startswith("BETA_DJANGO_") or k.startswith("PROD_DJANGO_") or k.startswith("DJANGO_EVAL_"):
+            if (
+                k.startswith("BETA_DJANGO_")
+                or k.startswith("PROD_DJANGO_")
+                or k.startswith("DJANGO_EVAL_")
+                or k in ("DJANGO_ADMIN_USERNAME", "DJANGO_ADMIN_PASSWORD", "DJANGO_ADMIN_URL")
+            ):
                 if not str(env.get(k, "")).strip():
                     env[k] = v
                 continue
@@ -381,8 +390,10 @@ def _decrypt_secrets_enc_into_env(env: dict) -> None:
 
 
 def _sync_django_admin_login_env(env: dict) -> None:
-    """Copy BETA_/PROD_* into DJANGO_ADMIN_* for Playwright (must match target env)."""
+    """Copy BETA_/PROD_* (or existing DJANGO_ADMIN_* from .secrets.env) into DJANGO_ADMIN_* for Playwright."""
     t = (env.get("DJANGO_TARGET_ENV") or "beta").strip().lower()
+    beta_url_default = "https://nkb-backend-ccbp-beta.earlywave.in/admin/"
+    prod_url_default = "https://nkb-backend-ccbp-prod-apis.ccbp.in/admin/"
     if t == "prod":
         u = str(env.get("PROD_DJANGO_ADMIN_USERNAME", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
         p = str(env.get("PROD_DJANGO_ADMIN_PASSWORD", "")).strip() or str(env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
@@ -391,12 +402,18 @@ def _sync_django_admin_login_env(env: dict) -> None:
         u = str(env.get("BETA_DJANGO_ADMIN_USERNAME", "")).strip()
         p = str(env.get("BETA_DJANGO_ADMIN_PASSWORD", "")).strip()
         url = str(env.get("BETA_DJANGO_ADMIN_URL", "")).strip()
-    if u:
-        env["DJANGO_ADMIN_USERNAME"] = u
-    if p:
-        env["DJANGO_ADMIN_PASSWORD"] = p
-    if url:
-        env["DJANGO_ADMIN_URL"] = url
+    if not u:
+        u = str(env.get("DJANGO_ADMIN_USERNAME", "")).strip()
+    if not p:
+        p = str(env.get("DJANGO_ADMIN_PASSWORD", "")).strip()
+    if not url:
+        url = str(env.get("DJANGO_ADMIN_URL", "")).strip()
+    if not url:
+        url = prod_url_default if t == "prod" else beta_url_default
+    # Always set (even empty) so stale empty strings from the parent shell cannot block re-login.
+    env["DJANGO_ADMIN_USERNAME"] = u
+    env["DJANGO_ADMIN_PASSWORD"] = p
+    env["DJANGO_ADMIN_URL"] = url
 
 
 def _prepare_django_child_env(run_env: dict) -> None:
@@ -631,6 +648,7 @@ def init_session(session_id):
         "lib_pipeline_exception.sh",
         "backend",
         ".secrets.env",
+        "secrets.local.env",
         ".secrets.key",
     ):
         src = os.path.join(BASE_DIR, extra)
