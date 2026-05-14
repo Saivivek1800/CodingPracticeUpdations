@@ -19,8 +19,8 @@ fi
 source venv/bin/activate
 
 echo "Upgrading pip and installing requirements..."
-pip install --upgrade pip
-pip install -r requirements.txt
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
 
 echo "Installing Chromium for Playwright..."
 playwright install chromium

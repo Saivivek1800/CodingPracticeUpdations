@@ -19,15 +19,15 @@ if not ADMIN_URL.endswith('/'):
 CONTENT_LOADING_URL = ADMIN_URL + "nkb_load_data/contentloading/add/"
 SESSION_FILE = os.environ.get("SESSION_FILE", "admin_session.json")
 
-if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
-    print(
-        f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
-        "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
-        flush=True,
-    )
-    sys.exit(1)
 
 def run_description_updater(json_file):
+    if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+        print(
+            f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+            "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
+            flush=True,
+        )
+        sys.exit(1)
     if not os.path.exists(json_file):
         print(f"Error: {json_file} not found.")
         sys.exit(1)

@@ -37,6 +37,8 @@ elif [ -f ".secrets.enc" ] && [ -n "${SECRETS_DECRYPTION_KEY:-}" ]; then
   echo "[OK] .secrets.enc + SECRETS_DECRYPTION_KEY in environment"
 elif [ -f ".secrets.env" ] && grep -qE '^[[:space:]]*BETA_DJANGO_ADMIN_USERNAME=[^[:space:]]' .secrets.env 2>/dev/null; then
   echo "[OK] .secrets.env has BETA_DJANGO_ADMIN_USERNAME set (plaintext mode)"
+elif [ -f "secrets.local.env" ] && grep -qE '^[[:space:]]*BETA_DJANGO_ADMIN_USERNAME=[^[:space:]]' secrets.local.env 2>/dev/null; then
+  echo "[OK] secrets.local.env has BETA_DJANGO_ADMIN_USERNAME (gitignored *.local.env)"
 elif [ -f ".secrets.env" ]; then
   echo "[WARN] .secrets.env exists but no beta username line — add creds or use .secrets.enc + .secrets.key"
 else

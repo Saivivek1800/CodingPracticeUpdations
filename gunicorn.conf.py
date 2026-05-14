@@ -7,7 +7,13 @@
 
 import os
 
-bind = os.environ.get("BIND", "0.0.0.0:5000")
+# Replit / PaaS: listen on $PORT when set (BIND overrides if you need a full host:port).
+if os.environ.get("BIND"):
+    bind = os.environ["BIND"]
+elif os.environ.get("PORT"):
+    bind = f"0.0.0.0:{os.environ['PORT']}"
+else:
+    bind = "0.0.0.0:5000"
 workers = int(os.environ.get("GUNICORN_WORKERS", "1"))
 # Each open SSE stream (e.g. pipeline logs) holds a worker thread until the job ends.
 # Default 16 was too low — exhausted pool looks like "blank page / loading forever" on / and /health.

@@ -19,7 +19,8 @@ TEMPLATES_DIR = os.path.join(FRONTEND_DIR, "templates")
 def _eager_load_secrets_decryption_key_into_os_environ() -> None:
     """
     Production / Gunicorn: load passphrase for .secrets.enc without manual `export`.
-    Order: keep existing env; else .secrets.key (one line); else SECRETS_DECRYPTION_KEY= in .secrets.env.
+    Order: keep existing env; else `.secrets.key`; else `SECRETS_DECRYPTION_KEY=` in `.secrets.env`
+    or `secrets.local.env`.
     Runs once when this module is imported (dev server, gunicorn workers).
     """
     if str(os.environ.get("SECRETS_DECRYPTION_KEY", "")).strip():
@@ -34,30 +35,33 @@ def _eager_load_secrets_decryption_key_into_os_environ() -> None:
                 return
         except OSError:
             pass
-    env_file = os.path.join(BASE_DIR, ".secrets.env")
-    if not os.path.isfile(env_file):
-        return
-    try:
-        with open(env_file, "r", encoding="utf-8") as f:
-            for raw in f:
-                line = raw.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.startswith("export "):
-                    line = line[7:].strip()
-                if "=" not in line:
-                    continue
-                name, _, val = line.partition("=")
-                if name.strip() != "SECRETS_DECRYPTION_KEY":
-                    continue
-                val = val.strip()
-                if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
-                    val = val[1:-1]
-                if val:
-                    os.environ["SECRETS_DECRYPTION_KEY"] = val
-                    return
-    except OSError:
-        pass
+    for env_file in (
+        os.path.join(BASE_DIR, ".secrets.env"),
+        os.path.join(BASE_DIR, "secrets.local.env"),
+    ):
+        if not os.path.isfile(env_file):
+            continue
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if line.startswith("export "):
+                        line = line[7:].strip()
+                    if "=" not in line:
+                        continue
+                    name, _, val = line.partition("=")
+                    if name.strip() != "SECRETS_DECRYPTION_KEY":
+                        continue
+                    val = val.strip()
+                    if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                        val = val[1:-1]
+                    if val:
+                        os.environ["SECRETS_DECRYPTION_KEY"] = val
+                        return
+        except OSError:
+            continue
 
 
 _eager_load_secrets_decryption_key_into_os_environ()

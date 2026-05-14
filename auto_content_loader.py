@@ -21,15 +21,15 @@ CONTENT_LOADING_URL = ADMIN_URL + "nkb_load_data/contentloading/add/"
 CONTENT_LOADING_LIST_URL = ADMIN_URL + "nkb_load_data/contentloading/"
 SESSION_FILE = os.environ.get("SESSION_FILE", "admin_session.json")
 
-if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
-    print(
-        f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
-        "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
-        flush=True,
-    )
-    sys.exit(1)
 
 def run_content_loader(json_file, task_type):
+    if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+        print(
+            f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+            "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
+            flush=True,
+        )
+        sys.exit(1)
     if not os.path.exists(json_file): # Fixed check to use start with exists
         print(f"Error: {json_file} not found.")
         sys.exit(1)

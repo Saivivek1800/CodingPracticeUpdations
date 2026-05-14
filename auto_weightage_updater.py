@@ -13,15 +13,15 @@ if not ADMIN_URL.endswith('/'):
 
 SESSION_FILE = os.environ.get("SESSION_FILE", "beta_admin_session.json")
 
-if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
-    print(
-        f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
-        "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
-        flush=True,
-    )
-    sys.exit(1)
 
 def update_testcase_weightages(json_file):
+    if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+        print(
+            f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+            "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env.",
+            flush=True,
+        )
+        sys.exit(1)
     if not os.path.exists(json_file):
         print(f"Error: File '{json_file}' not found.")
         return

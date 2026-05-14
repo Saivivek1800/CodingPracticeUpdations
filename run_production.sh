@@ -13,6 +13,13 @@ if [ -f "$ROOT/.secrets.env" ]; then
   source "$ROOT/.secrets.env"
   set +a
 fi
+# Gitignored overrides (same as lib_django_session.sh) — e.g. SECRETS_DECRYPTION_KEY or BETA_DJANGO_ADMIN_*.
+if [ -f "$ROOT/secrets.local.env" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ROOT/secrets.local.env"
+  set +a
+fi
 if [ -z "${SECRETS_DECRYPTION_KEY:-}" ] && [ -f "$ROOT/.secrets.key" ]; then
   export SECRETS_DECRYPTION_KEY="$(tr -d '\n\r' < "$ROOT/.secrets.key")"
 fi

@@ -1,0 +1,15 @@
+# Replit: https://docs.replit.com/category/replit-workspace
+# Packager installs from requirements.txt; run scripts/replit_bootstrap.sh once so
+# Playwright downloads Chromium (not done by pip alone).
+
+run = "bash -c 'test -x venv/bin/python3 || bash scripts/replit_bootstrap.sh; source venv/bin/activate && exec python3 -m gunicorn -c gunicorn.conf.py backend.api.wsgi:app'"
+
+language = "python3"
+
+[deployment]
+# Build runs when you deploy; keep it idempotent.
+build = ["bash", "scripts/replit_bootstrap.sh"]
+run = ["bash", "-c", "source venv/bin/activate && exec python3 -m gunicorn -c gunicorn.conf.py backend.api.wsgi:app"]
+
+[nix]
+channel = "stable-23_05"

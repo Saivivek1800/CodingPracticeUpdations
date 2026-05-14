@@ -23,12 +23,6 @@ if not ADMIN_URL.endswith("/"):
 CONTENT_LOADING_URL = ADMIN_URL + "nkb_load_data/contentloading/add/"
 SESSION_FILE = os.environ.get("SESSION_FILE", "beta_admin_session.json")
 
-if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
-    raise SystemExit(
-        f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
-        "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env (gitignored *.local.env)."
-    )
-
 
 def _max_wait_seconds_for_payload(payload: dict) -> int:
     """How long to poll the admin task before giving up (batch jobs need longer)."""
@@ -238,6 +232,12 @@ def _extract_s3_url(task_output_text: str) -> str | None:
 
 
 def run(input_file: str, raw_output_file: str, converted_output_file: str) -> None:
+    if not django_admin_can_relogin_or_session(SESSION_FILE, admin_url=ADMIN_URL):
+        raise SystemExit(
+            f"Error: No saved session ({SESSION_FILE}) and no admin credentials in environment. "
+            "Add BETA_/PROD_DJANGO_ADMIN_* to .secrets.env or secrets.local.env (gitignored *.local.env)."
+        )
+
     with open(input_file, "r", encoding="utf-8") as f:
         payload = json.load(f)
 
